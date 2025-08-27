@@ -1,0 +1,373 @@
+﻿@page "/simulator"
+@using Microsoft.JSInterop
+@using NetworkSimulator.Shared
+@using System.Net.Http.Json
+@inject IJSRuntime JSRuntime
+@inject HttpClient Http
+@implements IDisposable
+
+<h3>Simulatore di Rete</h3>
+
+<div class="controls mb-2">
+    <button class="btn btn-primary me-2" @onclick="AddNewNode">Aggiungi Nodo</button>
+    <button class="btn btn-danger me-2" @onclick="EnterDeleteNodeMode">Elimina Nodo</button>
+    <button class="btn btn-success" @onclick="EnterAddLinkMode">Aggiungi Collegamento</button>
+    <button class="btn btn-danger" @onclick="EnterDeleteLinkMode">Elimina Collegamento</button>
+</div>
+
+@if (isAddingLinkMode)
+{
+    <div class="alert alert-info" role="alert">
+        <strong>Modalità Aggiungi Collegamento:</strong> @addLinkStatus
+    </div>
+}
+
+@if (isDeletingNodeMode)
+{
+    <div class="alert alert-danger" role="alert">
+        <strong>Modalità Eliminazione Nodo:</strong> Clicca su un nodo per rimuoverlo.
+    </div>
+}
+
+@if (isDeletingLinkMode)
+{
+    <div class="alert alert-danger" role="alert">
+        <strong>Modalità Eliminazione:</strong> Clicca su un collegamento per rimuoverlo.
+    </div>
+}
+
+<div class="card mt-3">
+    <div class="card-body">
+        <h5 class="card-title">Esegui Simulazione</h5>
+        <div class="row g-3 align-items-center">
+            <div class="col-auto">
+                <label for="startNode" class="col-form-label">Partenza (ID)</label>
+                <input id="startNode" class="form-control" @bind="startNodeInput" />
+            </div>
+            <div class="col-auto">
+                <label for="endNode" class="col-form-label">Destinazione (ID)</label>
+                <input id="endNode" class="form-control" @bind="endNodeInput" />
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-primary mt-4 me-2" @onclick="ExecuteDijkstra">Calcola Dijkstra</button>
+                <button class="btn btn-info mt-4 me-2" @onclick="ExecuteBellmanFord">Calcola Bellman-Ford</button>
+                <button class="btn btn-warning mt-4" @onclick="ExecuteAco">Calcola ACO</button>
+            </div>
+        </div>
+        
+        @if(simulationResult != null)
+        {
+            // Mostra un messaggio di successo o di errore in base al risultato
+            var alertClass = simulationResult.Error == null ? "alert-success" : "alert-danger";
+            <div class="alert @alertClass mt-3">
+                @if(simulationResult.Error == null)
+                {
+                    <strong>Percorso Trovato:</strong> @string.Join(" -> ", simulationResult.Path) <br/>
+                    <strong>Costo Totale:</strong> @simulationResult.TotalCost
+                }
+                else
+                {
+                    <strong>Errore:</strong> @simulationResult.Error
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<div id="network-canvas" style="width: 100%; height: 600px; border: 1px solid lightgray;"></div>
+
+@code {
+    private int nodeCounter = 1;
+    private DotNetObjectReference<NetworkCanvas> objRef;
+
+    private static bool isAddingLinkMode = false;
+    private static string addLinkStatus = "";
+    private static string? firstNodeIdSelected = null;
+    private static bool isDeletingLinkMode = false;
+    private static bool isDeletingNodeMode = false;
+
+    private int linkCounter = 1;
+
+    // Liste per mantenere lo stato del grafo in C#
+    private List<Node> nodes = new List<Node>();
+    private List<Link> links = new List<Link>();
+
+    // Variabili per l'input e il risultato della simulazione
+    private string startNodeInput = "1";
+    private string endNodeInput = "";
+    private PathResult? simulationResult;
+
+    // Metodo del ciclo di vita: viene chiamato dopo che il componente è stato renderizzato.
+    // È il momento perfetto per inizializzare le librerie JS.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Passiamo un riferimento di questa istanza a JS
+            objRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("networkGraph.init", "network-canvas", objRef);
+        }
+    }
+
+    private async Task AddNewNode()
+    {
+        var newNode = new Node
+        {
+            Id = nodeCounter.ToString(),
+            Label = ""
+        };
+        // Aggiungi il nodo alla lista di stato
+        nodes.Add(newNode);
+
+        // La label visualizzata mostra solo l'ID all'inizio
+        string displayLabel = $"ID: {newNode.Id}";
+
+        // Chiama la funzione JS 'addNode' per aggiungere il nuovo nodo al grafo
+        await JSRuntime.InvokeVoidAsync("networkGraph.addNode", new {
+            id = newNode.Id,
+            label = displayLabel
+        });
+        nodeCounter++;
+    }
+
+    private void EnterAddLinkMode()
+    {
+        isAddingLinkMode = true;
+        isDeletingLinkMode = false;
+        isDeletingNodeMode = false;
+        firstNodeIdSelected = null;
+        addLinkStatus = "Seleziona il nodo di partenza.";
+        StateHasChanged();
+    }
+
+    private void EnterDeleteLinkMode()
+    {
+        // Attiva la modalità cancellazione e disattiva le altre
+        isDeletingLinkMode = true;
+        isAddingLinkMode = false; 
+        isDeletingNodeMode = false;
+        StateHasChanged();
+    }
+
+    // Nuovo metodo per entrare in modalità eliminazione nodo
+    private void EnterDeleteNodeMode()
+    {
+        isDeletingNodeMode = true;
+        isAddingLinkMode = false;
+        isDeletingLinkMode = false;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task HandleNodeClick(string nodeId)
+    {
+        if (isDeletingNodeMode)
+        {
+            // 1. Rimuovi il nodo dalla lista di stato
+            var nodeToRemove = nodes.FirstOrDefault(n => n.Id == nodeId);
+            if (nodeToRemove != null)
+            {
+                nodes.Remove(nodeToRemove);
+            
+                // 2. Trova e rimuovi TUTTI i link connessi a questo nodo
+                var linksToRemove = links.Where(l => l.From == nodeId || l.To == nodeId).ToList();
+                foreach (var link in linksToRemove)
+                {
+                    links.Remove(link);
+                    // Rimuovi anche dal canvas
+                    await JSRuntime.InvokeVoidAsync("networkGraph.removeLink", link.Id);
+                }
+
+                // 3. Chiama la funzione JS per rimuovere il nodo dal canvas
+                await JSRuntime.InvokeVoidAsync("networkGraph.removeNode", nodeId);
+            }
+
+            // 4. Esci dalla modalità
+            isDeletingNodeMode = false;
+            StateHasChanged();
+            return; // Esci per non eseguire la logica di aggiunta link
+        }
+
+        if (!isAddingLinkMode) return;
+
+        if (firstNodeIdSelected == null)
+        {
+            // È il primo nodo cliccato
+            firstNodeIdSelected = nodeId;
+            addLinkStatus = $"Nodo di partenza '{firstNodeIdSelected}' selezionato. Seleziona il nodo di destinazione.";
+            // Forza l'aggiornamento della UI
+            StateHasChanged(); 
+        }
+        else
+        {
+            // Secondo nodo cliccato: prima di creare il link, chiediamo il peso.
+            var weight = await JSRuntime.InvokeAsync<double>("networkGraph.promptForWeight", firstNodeIdSelected, nodeId);
+
+            var newLink = new Link
+            {
+                Id = $"L{linkCounter++}",
+                From = firstNodeIdSelected,
+                To = nodeId,
+                Weight = weight // Uso il peso inserito dall'utente
+            };
+            // Aggiungi il link alla lista di stato
+            links.Add(newLink);
+
+            // Passa a JS un oggetto che include l'etichetta per la visualizzazione
+            await JSRuntime.InvokeVoidAsync("networkGraph.addLink", new {
+                id = newLink.Id,
+                from = newLink.From,
+                to = newLink.To,
+                label = newLink.Weight.ToString()
+            });
+
+            // Usciamo dalla modalità "Aggiungi Collegamento"
+            isAddingLinkMode = false;
+            firstNodeIdSelected = null;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task HandleLinkClick(string linkId)
+    {
+        if (!isDeletingLinkMode) return;
+
+        // 1. Rimuovi il link dalla nostra lista di stato
+        var linkToRemove = links.FirstOrDefault(l => l.Id == linkId);
+        if (linkToRemove != null)
+        {
+            links.Remove(linkToRemove);
+        
+            // 2. Chiama la funzione JS per rimuovere il link dal canvas
+            await JSRuntime.InvokeVoidAsync("networkGraph.removeLink", linkId);
+        }
+
+        // 3. Esci dalla modalità cancellazione
+        isDeletingLinkMode = false;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task HandleNodeDoubleClick(string nodeId)
+    {
+        var nodeToUpdate = nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (nodeToUpdate == null) return;
+
+        // Chiedi all'utente la NUOVA parte dell'etichetta, usando la vecchia come default
+        string userLabel = nodeToUpdate.Label.Contains("\n") ? nodeToUpdate.Label.Split('\n')[1] : "";
+        var newLabelPart = await JSRuntime.InvokeAsync<string>("networkGraph.promptForLabel", userLabel);
+
+        string fullNewLabel = $"ID: {nodeId}\n{newLabelPart}";
+
+        // Aggiorna lo stato in C#
+        nodeToUpdate.Label = fullNewLabel;
+
+        // Aggiorna la visualizzazione in JS
+        await JSRuntime.InvokeVoidAsync("networkGraph.updateNode", nodeId, fullNewLabel);
+    }
+
+    [JSInvokable]
+    public async Task HandleLinkDoubleClick(string linkId)
+    {
+        // 1. Trova il link nella nostra lista di stato
+        var linkToUpdate = links.FirstOrDefault(l => l.Id == linkId);
+        if (linkToUpdate == null) return;
+
+        // 2. Chiedi all'utente il nuovo peso (riutilizzando la funzione JS)
+        var newWeight = await JSRuntime.InvokeAsync<double>("networkGraph.promptForWeight", linkToUpdate.From, linkToUpdate.To);
+
+        // 3. Aggiorna il peso nella nostra lista di stato
+        linkToUpdate.Weight = newWeight;
+
+        // 4. Chiama la nuova funzione JS per aggiornare la visualizzazione
+        await JSRuntime.InvokeVoidAsync("networkGraph.updateLink", linkId, newWeight);
+    }
+
+    // Metodo che chiama l'API per eseguire Dijkstra
+    private async Task ExecuteDijkstra()
+    {
+        simulationResult = null; // Resetta il risultato precedente
+        // Chiama la funzione JS per resettare eventuali percorsi precedenti
+        await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlight");
+
+        var graphData = new GraphData { Nodes = nodes, Links = links };
+
+        var response = await Http.PostAsJsonAsync($"api/simulation/dijkstra/{startNodeInput}/{endNodeInput}", graphData);
+
+        if (response.IsSuccessStatusCode)
+        {
+            simulationResult = await response.Content.ReadFromJsonAsync<PathResult>();
+            if (simulationResult?.Path != null)
+            {
+                // Se il percorso è stato trovato, chiama la funzione JS per evidenziarlo
+                await JSRuntime.InvokeVoidAsync("networkGraph.highlightPath", simulationResult.Path);
+            }
+        }
+        else
+        {
+            simulationResult = new PathResult 
+            { 
+                Error = $"Errore dal server: {response.StatusCode} ({response.ReasonPhrase})" 
+            };
+        }
+    }
+
+    private async Task ExecuteBellmanFord()
+    {
+        simulationResult = null;
+        await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlight");
+    
+        var graphData = new GraphData { Nodes = nodes, Links = links };
+    
+        // L'unica differenza è l'URL che viene chiamato
+        var response = await Http.PostAsJsonAsync($"api/simulation/bellman-ford/{startNodeInput}/{endNodeInput}", graphData);
+
+        if (response.IsSuccessStatusCode)
+        {
+            simulationResult = await response.Content.ReadFromJsonAsync<PathResult>();
+            if (simulationResult?.Path != null)
+            {
+                await JSRuntime.InvokeVoidAsync("networkGraph.highlightPath", simulationResult.Path);
+            }
+        }
+        else
+        {
+            simulationResult = new PathResult 
+            { 
+                Error = $"Errore dal server: {response.StatusCode} ({response.ReasonPhrase})" 
+            };
+        }
+    }
+
+    private async Task ExecuteAco()
+    {
+        simulationResult = null;
+        await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlight");
+        var graphData = new GraphData { Nodes = nodes, Links = links };
+
+        var response = await Http.PostAsJsonAsync($"api/simulation/aco/{startNodeInput}/{endNodeInput}", graphData);
+        
+        if (response.IsSuccessStatusCode)
+        {
+            simulationResult = await response.Content.ReadFromJsonAsync<PathResult>();
+            if (simulationResult?.Path != null)
+            {
+                await JSRuntime.InvokeVoidAsync("networkGraph.highlightPath", simulationResult.Path);
+            }
+        }
+        else
+        {
+            simulationResult = new PathResult 
+            { 
+                Error = $"Errore dal server: {response.StatusCode} ({response.ReasonPhrase})" 
+            };
+        }
+    }
+
+    // Metodo per il cleanup
+    public void Dispose()
+    {
+        objRef?.Dispose();
+    }
+}
