@@ -1,10 +1,6 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using NetworkSimulator.Server.Hubs;
 using NetworkSimulator.Shared;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
 
 namespace NetworkSimulator.Server.Services
 {
@@ -15,6 +11,7 @@ namespace NetworkSimulator.Server.Services
     public class SimulationService : IDisposable
     {
         private readonly IHubContext<SimulationHub> _hubContext;
+        private readonly RoutingAgent _routingAgent;
         private Timer? _timer;
         private GraphData? _networkGraph;
         private List<DataPacket> _packets = new List<DataPacket>();
@@ -22,16 +19,18 @@ namespace NetworkSimulator.Server.Services
         private int _simulationTime = 0;
         public bool IsRunning { get; private set; } = false;
         private string _activeMetric = "latency";
+        private string _activeRoutingAlgorithm = "Dijkstra";
 
         /// <summary>
         /// Costruttore che riceve il contesto dell'Hub SignalR per poter comunicare con i client.
         /// </summary>
-        public SimulationService(IHubContext<SimulationHub> hubContext)
+        public SimulationService(IHubContext<SimulationHub> hubContext, RoutingAgent routingAgent)
         {
             _hubContext = hubContext;
+            _routingAgent = routingAgent;
         }
 
-        public void StartSimulation(GraphData graph, string metric)
+        public void StartSimulation(GraphData graph, string routingAlgorithm, string metric)
         {
             if (IsRunning) return;
             _networkGraph = graph;
@@ -40,6 +39,7 @@ namespace NetworkSimulator.Server.Services
             IsRunning = true;
             _timer = new Timer(SimulationStep, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
             _activeMetric = metric;
+            _activeRoutingAlgorithm = routingAlgorithm;
             Console.WriteLine("Simulazione avviata.");
         }
 
@@ -108,58 +108,106 @@ namespace NetworkSimulator.Server.Services
         /// </summary>
         private void GenerateTraffic()
         {
-            if (_networkGraph?.Nodes == null) return;
+            if (_networkGraph == null) return;
             var sensors = _networkGraph.Nodes.Where(n => n.Type == NodeType.Sensor);
             foreach (var sensor in sensors)
             {
-                // La probabilità di generare un pacchetto dipende dal rapporto tra DataRate e PacketSize
                 if (_random.NextDouble() < (sensor.DataRate / (sensor.PacketSize ?? 1.0)))
                 {
-                    // La destinazione "Internet" deve esistere nella topologia
                     var internetNode = _networkGraph.Nodes.FirstOrDefault(n => n.Type == NodeType.Internet);
                     if (internetNode == null) continue;
 
-                    var pathResult = CalculateDijkstraPath(_networkGraph, sensor.Id, internetNode.Id, _activeMetric);
-
-                    // Crea il pacchetto solo se un percorso valido esiste
-                    if (pathResult.Path != null && pathResult.Path.Count > 1)
+                    _packets.Add(new DataPacket
                     {
-                        _hubContext.Clients.All.SendAsync("PathCalculated", pathResult, "Dijkstra", _activeMetric);
-
-                        var newPacket = new DataPacket
-                        {
-                            SourceId = sensor.Id,
-                            DestinationId = internetNode.Id,
-                            CurrentLocationId = sensor.Id,
-                            Size = sensor.PacketSize ?? 1,
-                            Priority = sensor.LatencyRequirement < 50 ? 1 : 5,
-                            FullPath = pathResult.Path // Salva l'intero percorso nel pacchetto
-                        };
-                        _packets.Add(newPacket);
-                    }
+                        SourceId = sensor.Id,
+                        DestinationId = internetNode.Id,
+                        CurrentLocationId = sensor.Id,
+                        FullPath = new List<string> { sensor.Id },
+                        PathIndex = 0,
+                        Size = sensor.PacketSize ?? 1,
+                        Priority = sensor.LatencyRequirement < 50 ? 1 : 5,
+                    });
                 }
             }
         }
 
         /// <summary>
-        /// Per ogni pacchetto, decide il prossimo passo e aggiorna la sua posizione.
+        /// Per ogni pacchetto, decide il prossimo passo, aggiorna lo stato e invia i dati al frontend.
         /// </summary>
         private void RouteAndMovePackets()
         {
-            // Rimuove i pacchetti che hanno completato il loro percorso
-            _packets.RemoveAll(p => p.FullPath != null && p.PathIndex >= p.FullPath.Count - 1);
+            _packets.RemoveAll(p => p.CurrentLocationId == p.DestinationId);
+
+            bool hasPanelBeenUpdatedThisTick = false;
 
             foreach (var packet in _packets)
             {
-                if (packet.FullPath == null) continue;
+                if (_networkGraph == null || packet.FullPath == null) continue;
 
-                // Incrementa l'indice per avanzare al prossimo nodo nel percorso pianificato
-                packet.PathIndex++;
+                string nextHop = packet.CurrentLocationId;
 
-                // Aggiorna la posizione precedente e attuale
-                packet.PreviousLocationId = packet.FullPath[packet.PathIndex - 1];
-                packet.CurrentLocationId = packet.FullPath[packet.PathIndex];
+                // 1. DECISIONE DI ROUTING (RISPETTA LA SCELTA DELL'UTENTE)
+                if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
+                {
+                    nextHop = _routingAgent.ChooseNextHop(_networkGraph, packet.CurrentLocationId, packet.DestinationId);
+                }
+                else // Default: usa Dijkstra
+                {
+                    // Ricalcola il percorso dalla posizione attuale per reagire ai guasti
+                    var pathResult = CalculateDijkstraPath(_networkGraph, packet.CurrentLocationId, packet.DestinationId, _activeMetric);
+                    if (pathResult.Path != null && pathResult.Path.Count > 1)
+                    {
+                        nextHop = pathResult.Path[1];
+                    }
+                }
+
+                // 2. MOVIMENTO E AGGIORNAMENTO STATO PACCHETTO
+                if (nextHop != packet.CurrentLocationId)
+                {
+                    var linkTaken = _networkGraph.Links.FirstOrDefault(l => l.From == packet.CurrentLocationId && l.To == nextHop);
+                    if (linkTaken != null)
+                    {
+                        if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
+                        {
+                            _routingAgent.UpdateQValue(_networkGraph, packet.CurrentLocationId, nextHop, packet.DestinationId, linkTaken);
+                        }
+
+                        packet.FullPath.Add(nextHop);
+                        packet.PathIndex = packet.FullPath.Count - 1;
+                        packet.PreviousLocationId = packet.CurrentLocationId;
+                        packet.CurrentLocationId = nextHop;
+                    }
+                }
+
+                // --- 3. AGGIORNAMENTO PANNELLO (CORRETTO E SINCRONIZZATO) ---
+                // Aggiorniamo il pannello solo UNA VOLTA per tick, usando il primo pacchetto come riferimento
+                // per evitare sfarfallii e dati incoerenti.
+                if (!hasPanelBeenUpdatedThisTick)
+                {
+                    var pathForDisplay = new PathResult
+                    {
+                        Path = packet.FullPath,
+                        TotalCost = CalculatePathCost(packet.FullPath, _activeMetric)
+                    };
+                    _hubContext.Clients.All.SendAsync("PathCalculated", pathForDisplay, _activeRoutingAlgorithm, _activeMetric);
+                    hasPanelBeenUpdatedThisTick = true;
+                }
             }
+        }
+
+        /// <summary>
+        /// Metodo helper per calcolare il costo totale di un percorso dato.
+        /// </summary>
+        private double CalculatePathCost(List<string> path, string metric)
+        {
+            double totalCost = 0;
+            if (_networkGraph == null || path.Count < 2) return 0;
+            for (int i = 0; i < path.Count - 1; i++)
+            {
+                var link = _networkGraph.Links.FirstOrDefault(l => l.From == path[i] && l.To == path[i + 1]);
+                if (link != null) totalCost += GetMetricValue(link, metric);
+            }
+            return totalCost;
         }
 
         /// <summary>
@@ -251,13 +299,15 @@ namespace NetworkSimulator.Server.Services
             switch (metric.ToLower())
             {
                 case "bandwidth":
-                    // Vogliamo massimizzare la banda, quindi minimizziamo il suo inverso.
-                    // Si aggiunge un valore piccolo per evitare la divisione per zero.
-                    return 1.0 / (link.Bandwidth + 0.0001);
+                    // Invertiamo e scaliamo per avere un costo più leggibile.
+                    // Una banda più alta (es. 1000 Mbps) avrà un costo più basso.
+                    // Una banda più bassa (es. 100 Mbps) avrà un costo più alto.
+                    return 1000 / (link.Bandwidth + 0.0001); // Aggiunto epsilon per evitare divisione per zero
 
                 case "reliability":
-                    // Vogliamo massimizzare l'affidabilità (vicina a 1.0), quindi minimizziamo l'inaffidabilità (1.0 - reliability).
-                    return 1.0 - link.Reliability;
+                    // Trasformiamo l'inaffidabilità (un numero piccolo) in un costo intero più grande.
+                    // Un'affidabilità più alta (es. 0.999) avrà un costo più basso.
+                    return (1.0 - link.Reliability) * 1000;
 
                 case "latency":
                 default:

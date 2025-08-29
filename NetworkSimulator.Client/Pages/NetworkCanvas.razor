@@ -63,6 +63,14 @@
         }
 
         <div class="mt-2">
+            <label for="routing" class="form-label mb-0">Algoritmo di Routing:</label>
+            <select id="routing" class="form-select form-select-sm" @bind="selectedRoutingAlgorithm" disabled="@isSimulationRunning">
+                <option value="Dijkstra">Dijkstra</option>
+                <option value="AI">AI (Q-Learning)</option>
+            </select>
+        </div>
+
+        <div class="mt-2">
             <label for="metric" class="form-label mb-0">Ottimizza per:</label>
             <select id="metric" class="form-select form-select-sm" @bind="selectedMetric" disabled="@isSimulationRunning">
                 <option value="latency">Latenza</option>
@@ -113,6 +121,7 @@
     private string latestMetricUsed = "";
 
     private string selectedMetric = "latency";
+    private string selectedRoutingAlgorithm = "Dijkstra";
 
     /// <summary>
     /// All'avvio del componente, inizializza la connessione SignalR.
@@ -160,7 +169,6 @@
     private async Task LoadTopology()
     {
         if (string.IsNullOrEmpty(selectedTopologyFile)) return;
-
         // Ferma qualsiasi simulazione in corso
         if (isSimulationRunning) await StopSimulation();
 
@@ -232,7 +240,7 @@
         isBusy = true;
         simulationStatusMessage = "Avvio della simulazione in corso...";
         var graphData = new GraphData { Nodes = nodes, Links = links };
-        var response = await Http.PostAsJsonAsync($"api/simulation/start?metric={selectedMetric}", graphData);
+        var response = await Http.PostAsJsonAsync($"api/simulation/start?routingAlgorithm={selectedRoutingAlgorithm}&metric={selectedMetric}", graphData);
 
         if (response.IsSuccessStatusCode)
         {
