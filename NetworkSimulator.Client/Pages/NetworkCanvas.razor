@@ -349,6 +349,11 @@
             await JSRuntime.InvokeVoidAsync("networkGraph.removeNode", nodeId);
         }
 
+        if (isSimulationRunning && hubConnection != null)
+        {
+            await hubConnection.SendAsync("NotifyGraphUpdate", "removenode", nodeId);
+        }
+
         // Esci dalla modalità dopo aver cancellato
         isDeletingNodeMode = false;
         StateHasChanged();
@@ -363,6 +368,12 @@
         {
             links.Remove(linkToRemove);
             await JSRuntime.InvokeVoidAsync("networkGraph.removeLink", linkId);
+
+            // Se la simulazione è attiva, notifica il server della modifica.
+            if (isSimulationRunning && hubConnection != null)
+            {
+                await hubConnection.SendAsync("NotifyGraphUpdate", "removelink", linkId);
+            }
         }
         isDeletingLinkMode = false;
         StateHasChanged();

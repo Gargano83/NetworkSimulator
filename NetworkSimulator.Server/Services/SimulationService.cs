@@ -76,6 +76,34 @@ namespace NetworkSimulator.Server.Services
         }
 
         /// <summary>
+        /// Aggiorna la copia interna della topologia di rete in tempo reale.
+        /// Questo metodo viene chiamato dall'Hub quando il client notifica una modifica.
+        /// </summary>
+        public void UpdateGraph(string action, string itemId)
+        {
+            if (_networkGraph == null) return;
+
+            switch (action.ToLower())
+            {
+                case "removelink":
+                    _networkGraph.Links.RemoveAll(l => l.Id == itemId);
+                    Console.WriteLine($"[Real-time Update] Link {itemId} rimosso dalla simulazione.");
+                    break;
+
+                case "removenode":
+                    var nodeToRemove = _networkGraph.Nodes.FirstOrDefault(n => n.Id == itemId);
+                    if (nodeToRemove != null)
+                    {
+                        _networkGraph.Nodes.Remove(nodeToRemove);
+                        // Rimuove anche tutti i collegamenti connessi a quel nodo
+                        _networkGraph.Links.RemoveAll(l => l.From == itemId || l.To == itemId);
+                        Console.WriteLine($"[Real-time Update] Nodo {itemId} e i suoi link rimossi dalla simulazione.");
+                    }
+                    break;
+            }
+        }
+
+        /// <summary>
         /// Genera nuovi pacchetti di dati dai nodi di tipo Sensore.
         /// </summary>
         private void GenerateTraffic()
