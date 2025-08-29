@@ -47,5 +47,11 @@ namespace NetworkSimulator.Server.Controllers
         {
             return Ok(_simulationService.IsRunning);
         }
+
+        [HttpGet("stats")]
+        public ActionResult<SimulationStats> GetStats()
+        {
+            return Ok(_simulationService.GetSimulationStats());
+        }
     }
 }

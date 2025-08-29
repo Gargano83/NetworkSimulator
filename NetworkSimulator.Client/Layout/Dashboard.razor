@@ -1,0 +1,22 @@
+﻿@using NetworkSimulator.Shared
+<div class="card mt-3">
+    <div class="card-header">Dashboard Risultati</div>
+    <div class="card-body">
+        @if (Stats != null)
+        {
+            <div class="row">
+                <div class="col"><strong>Pacchetti Consegnati:</strong> @Stats.PacketsDelivered / @Stats.PacketsGenerated</div>
+                <div class="col"><strong>Latenza Media:</strong> @Stats.AverageLatency.ToString("F2") s</div>
+                <div class="col"><strong>Throughput:</strong> @Stats.Throughput.ToString("F2") KB/s</div>
+            </div>
+        }
+        else
+        {
+            <p>Nessun dato disponibile. Ferma la simulazione per vedere i risultati.</p>
+        }
+    </div>
+</div>
+@code {
+    [Parameter]
+    public SimulationStats? Stats { get; set; }
+}

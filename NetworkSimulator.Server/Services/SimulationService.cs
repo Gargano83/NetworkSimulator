@@ -21,6 +21,11 @@ namespace NetworkSimulator.Server.Services
         private string _activeMetric = "latency";
         private string _activeRoutingAlgorithm = "Dijkstra";
 
+        private int _packetsGenerated = 0;
+        private int _packetsDelivered = 0;
+        private double _totalLatencySum = 0;
+        private DateTime _simulationStartTime;
+
         /// <summary>
         /// Costruttore che riceve il contesto dell'Hub SignalR per poter comunicare con i client.
         /// </summary>
@@ -40,6 +45,10 @@ namespace NetworkSimulator.Server.Services
             _timer = new Timer(SimulationStep, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
             _activeMetric = metric;
             _activeRoutingAlgorithm = routingAlgorithm;
+            _packetsGenerated = 0;
+            _packetsDelivered = 0;
+            _totalLatencySum = 0;
+            _simulationStartTime = DateTime.UtcNow;
             Console.WriteLine("Simulazione avviata.");
         }
 
@@ -104,6 +113,24 @@ namespace NetworkSimulator.Server.Services
         }
 
         /// <summary>
+        /// NUOVO: Metodo che calcola e restituisce le statistiche finali.
+        /// </summary>
+        public SimulationStats GetSimulationStats()
+        {
+            var elapsedSeconds = (DateTime.UtcNow - _simulationStartTime).TotalSeconds;
+            if (elapsedSeconds < 1) elapsedSeconds = 1;
+
+            return new SimulationStats
+            {
+                PacketsGenerated = _packetsGenerated,
+                PacketsDelivered = _packetsDelivered,
+                AverageLatency = _packetsDelivered > 0 ? _totalLatencySum / _packetsDelivered : 0,
+                // Throughput calcolato come totale dei pacchetti arrivati diviso il tempo
+                Throughput = _packets.Sum(p => p.Size) / elapsedSeconds
+            };
+        }
+
+        /// <summary>
         /// Genera nuovi pacchetti di dati dai nodi di tipo Sensore.
         /// </summary>
         private void GenerateTraffic()
@@ -117,7 +144,7 @@ namespace NetworkSimulator.Server.Services
                     var internetNode = _networkGraph.Nodes.FirstOrDefault(n => n.Type == NodeType.Internet);
                     if (internetNode == null) continue;
 
-                    _packets.Add(new DataPacket
+                    var newPacket = new DataPacket
                     {
                         SourceId = sensor.Id,
                         DestinationId = internetNode.Id,
@@ -126,7 +153,13 @@ namespace NetworkSimulator.Server.Services
                         PathIndex = 0,
                         Size = sensor.PacketSize ?? 1,
                         Priority = sensor.LatencyRequirement < 50 ? 1 : 5,
-                    });
+                        CreationTime = _simulationTime
+                    };
+
+                    _packets.Add(newPacket);
+                    _packetsGenerated++;
+                    // Invia un log eventi in tempo reale
+                    _hubContext.Clients.All.SendAsync("LogEvent", $"[{_simulationTime}s] Pacchetto generato da {newPacket.SourceId}");
                 }
             }
         }
@@ -136,6 +169,13 @@ namespace NetworkSimulator.Server.Services
         /// </summary>
         private void RouteAndMovePackets()
         {
+            // Modifichiamo la logica di rimozione
+            var deliveredPackets = _packets.Where(p => p.CurrentLocationId == p.DestinationId).ToList();
+            foreach (var packet in deliveredPackets)
+            {
+                _packetsDelivered++;
+                _totalLatencySum += (_simulationTime - packet.CreationTime); // Assumendo che aggiungi CreationTime al DataPacket
+            }
             _packets.RemoveAll(p => p.CurrentLocationId == p.DestinationId);
 
             bool hasPanelBeenUpdatedThisTick = false;

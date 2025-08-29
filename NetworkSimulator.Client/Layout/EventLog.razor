@@ -1,0 +1,14 @@
+﻿<div class="card mt-3">
+    <div class="card-header">Log Eventi</div>
+    <div class="card-body" style="height: 150px; overflow-y: scroll; font-family: monospace; font-size: 0.8rem;">
+        @foreach (var msg in LogMessages)
+        {
+            <div>@msg</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public List<string> LogMessages { get; set; } = new List<string>();
+}

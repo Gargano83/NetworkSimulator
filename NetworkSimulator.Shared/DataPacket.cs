@@ -46,5 +46,10 @@
         /// Inizia a 0 (la sorgente).
         /// </summary>
         public int PathIndex { get; set; } = 0;
+        /// <summary>
+        /// Il "tick" di tempo della simulazione in cui il pacchetto è stato creato.
+        /// Utile per calcolare la latenza totale di consegna.
+        /// </summary>
+        public int CreationTime { get; set; }
     }
 }
