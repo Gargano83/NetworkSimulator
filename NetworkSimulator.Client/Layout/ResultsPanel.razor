@@ -14,11 +14,11 @@
             <span class="text-capitalize">@Metric</span>
         </p>
         <hr />
-        @if (Result != null && Result.Error == null)
+        @if (Result != null && Result.Error == null && Result.Path != null)
         {
             <p class="card-text mb-1">
                 <strong>Percorso Scelto:</strong>
-                <code>@string.Join(" → ", Result.Path)</code>
+                <code>@GetPathWithLabels()</code>
             </p>
             <p class="card-text mb-1">
                 <strong>Costo Totale:</strong>
@@ -35,22 +35,36 @@
 </div>
 
 @code {
-    /// <summary>
-    /// Il risultato del calcolo del percorso da visualizzare.
-    /// Questo parametro viene passato dal componente genitore (NetworkCanvas).
-    /// </summary>
     [Parameter]
     public PathResult? Result { get; set; }
 
-    /// <summary>
-    /// Il nome dell'algoritmo utilizzato.
-    /// </summary>
     [Parameter]
     public string AlgorithmName { get; set; } = "N/D";
 
-    /// <summary>
-    /// La metrica utilizzata per l'ottimizzazione.
-    /// </summary>
     [Parameter]
     public string Metric { get; set; } = "N/D";
+
+    /// <summary>
+    /// NUOVO: Riceve la lista completa di tutti i nodi della topologia.
+    /// </summary>
+    [Parameter]
+    public List<Node> AllNodes { get; set; } = new List<Node>();
+
+    /// <summary>
+    /// NUOVO: Metodo helper per tradurre la lista di ID in una stringa di etichette.
+    /// </summary>
+    private string GetPathWithLabels()
+    {
+        if (Result?.Path == null || !AllNodes.Any())
+        {
+            return "N/D";
+        }
+
+        // Per ogni ID nel percorso, trova il nodo corrispondente e prendi la sua etichetta.
+        var labels = Result.Path.Select(nodeId =>
+            AllNodes.FirstOrDefault(node => node.Id == nodeId)?.Label ?? nodeId
+        );
+
+        return string.Join(" → ", labels);
+    }
 }

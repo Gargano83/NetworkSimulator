@@ -21,6 +21,7 @@ namespace NetworkSimulator.Server.Services
         private readonly Random _random = new Random();
         private int _simulationTime = 0;
         public bool IsRunning { get; private set; } = false;
+        private string _activeMetric = "latency";
 
         /// <summary>
         /// Costruttore che riceve il contesto dell'Hub SignalR per poter comunicare con i client.
@@ -30,7 +31,7 @@ namespace NetworkSimulator.Server.Services
             _hubContext = hubContext;
         }
 
-        public void StartSimulation(GraphData graph)
+        public void StartSimulation(GraphData graph, string metric)
         {
             if (IsRunning) return;
             _networkGraph = graph;
@@ -38,6 +39,7 @@ namespace NetworkSimulator.Server.Services
             _simulationTime = 0;
             IsRunning = true;
             _timer = new Timer(SimulationStep, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+            _activeMetric = metric;
             Console.WriteLine("Simulazione avviata.");
         }
 
@@ -89,12 +91,12 @@ namespace NetworkSimulator.Server.Services
                     var internetNode = _networkGraph.Nodes.FirstOrDefault(n => n.Type == NodeType.Internet);
                     if (internetNode == null) continue;
 
-                    var pathResult = CalculateDijkstraPath(_networkGraph, sensor.Id, internetNode.Id, "latency");
+                    var pathResult = CalculateDijkstraPath(_networkGraph, sensor.Id, internetNode.Id, _activeMetric);
 
                     // Crea il pacchetto solo se un percorso valido esiste
                     if (pathResult.Path != null && pathResult.Path.Count > 1)
                     {
-                        _hubContext.Clients.All.SendAsync("PathCalculated", pathResult, "Dijkstra", "latency");
+                        _hubContext.Clients.All.SendAsync("PathCalculated", pathResult, "Dijkstra", _activeMetric);
 
                         var newPacket = new DataPacket
                         {

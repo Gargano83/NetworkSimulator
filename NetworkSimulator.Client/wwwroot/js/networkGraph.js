@@ -184,34 +184,9 @@ window.networkGraph = {
     },
 
     addNode: function (node) {
-        switch (node.type.toLowerCase()) {
-            case "sensor":
-                node.shape = "dot";
-                node.color = "#FFC107"; // Giallo
-                node.size = 15;
-                break;
-            case "gateway":
-                node.shape = "triangle";
-                node.color = "#198754"; // Verde
-                node.size = 20;
-                break;
-            case "router":
-                node.shape = "square";
-                node.color = "#0D6EFD"; // Blu
-                node.size = 20;
-                break;
-            case "internet":
-                node.shape = "icon";
-                node.icon = {
-                    face: "'Font Awesome 5 Free'",
-                    weight: "900", // Necessario per le icone solid
-                    code: '\uf0ac', // Codice unicode per l'icona "globe"
-                    size: 50,
-                    color: '#6c757d'
-                };
-                break;
-        }
-        nodes.add(node);
+        const styledNode = getNodeStyle(node);
+        // Aggiunge il nodo stilizzato al canvas
+        nodes.add(styledNode);
     },
 
     addLink: function (link) {
@@ -273,4 +248,36 @@ function findEdge(fromNode, toNode) {
         filter: item => (item.from == fromNode && item.to == toNode) || (item.from == toNode && item.to == fromNode)
     });
     return connectedEdges.length > 0 ? connectedEdges[0] : null;
+}
+
+function getNodeStyle(node) {
+    let style = {
+        id: node.id,
+        label: node.label,
+        shape: 'image', // Usiamo la forma 'image'
+        size: 25,       // Dimensione del nodo-immagine
+    };
+
+    // Assegna il file immagine corretto in base al tipo
+    switch (node.type.toLowerCase()) {
+        case "sensor":
+            style.image = 'icons/sensor.png';
+            break;
+        case "gateway":
+            style.image = 'icons/gateway.png';
+            break;
+        case "router":
+            style.image = 'icons/router.png';
+            break;
+        case "internet":
+            style.image = 'icons/internet.png';
+            style.size = 35; // Facciamo il globo un po' più grande
+            break;
+        default:
+            // Immagine di fallback se il tipo non è riconosciuto
+            style.shape = 'dot';
+            style.color = '#6c757d';
+            break;
+    }
+    return style;
 }
