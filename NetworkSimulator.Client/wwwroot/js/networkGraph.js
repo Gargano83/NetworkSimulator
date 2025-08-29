@@ -75,28 +75,16 @@ window.networkGraph = {
 
         network.on("click", function (params) {
             if (params.nodes.length > 0) {
-                const nodeId = params.nodes[0];
-                // Se siamo in modalità eliminazione NODO...
-                if (isDeletingNodeMode) {
-                    dotNetHelper.invokeMethodAsync('DeleteNode', nodeId); // <-- CHIAMA IL NUOVO METODO
-                    isDeletingNodeMode = false; // Disattiva la modalità
-                }
-                // Se siamo in modalità aggiunta LINK...
-                else if (isAddingLinkMode) {
-                    if (firstNodeIdSelected === null) {
-                        firstNodeIdSelected = nodeId;
-                    } else {
-                        if (firstNodeIdSelected !== nodeId) {
-                            dotNetHelper.invokeMethodAsync('CreateLink', firstNodeIdSelected, nodeId);
-                        }
-                        isAddingLinkMode = false;
-                        firstNodeIdSelected = null;
-                    }
-                }
+                // Notifica a C# che un nodo è stato cliccato (per la selezione)
+                dotNetHelper.invokeMethodAsync('HandleNodeClick', params.nodes[0]);
             }
-            // Se clicchiamo un ARCO (per eliminazione link)
             else if (params.edges.length > 0) {
+                // Notifica a C# che un link è stato cliccato (per la selezione)
                 dotNetHelper.invokeMethodAsync('HandleLinkClick', params.edges[0]);
+            }
+            else {
+                // Se si clicca sullo sfondo, deseleziona tutto (opzionale ma consigliato)
+                dotNetHelper.invokeMethodAsync('HandleCanvasClick');
             }
         });
 
