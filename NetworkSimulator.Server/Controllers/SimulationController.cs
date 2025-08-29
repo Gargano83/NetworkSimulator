@@ -15,43 +15,37 @@ namespace NetworkSimulator.Server.Controllers
             _simulationService = simulationService;
         }
 
-        [HttpPost("dijkstra/{startNodeId}/{endNodeId}")]
-        public ActionResult<PathResult> RunDijkstra([FromBody] GraphData graph, string startNodeId, string endNodeId)
+        /// <summary>
+        /// Avvia la simulazione con la topologia di rete fornita.
+        /// </summary>
+        [HttpPost("start")]
+        public IActionResult StartSimulation([FromBody] GraphData graph)
         {
-            var result = _simulationService.CalculateDijkstraPath(graph, startNodeId, endNodeId);
-
-            if (result.Error != null)
+            if (graph == null || graph.Nodes.Count == 0)
             {
-                return BadRequest(result);
+                return BadRequest("La topologia della rete non può essere vuota.");
             }
-
-            return Ok(result);
+            _simulationService.StartSimulation(graph);
+            return Ok("Simulazione avviata.");
         }
 
-        [HttpPost("bellman-ford/{startNodeId}/{endNodeId}")]
-        public ActionResult<PathResult> RunBellmanFord([FromBody] GraphData graph, string startNodeId, string endNodeId)
+        /// <summary>
+        /// Ferma la simulazione in corso.
+        /// </summary>
+        [HttpPost("stop")]
+        public IActionResult StopSimulation()
         {
-            var result = _simulationService.CalculateBellmanFordPath(graph, startNodeId, endNodeId);
-
-            if (!string.IsNullOrEmpty(result.Error))
-            {
-                return BadRequest(result);
-            }
-
-            return Ok(result);
+            _simulationService.StopSimulation();
+            return Ok("Simulazione fermata.");
         }
 
-        [HttpPost("aco/{startNodeId}/{endNodeId}")]
-        public ActionResult<PathResult> RunAco([FromBody] GraphData graph, string startNodeId, string endNodeId)
+        /// <summary>
+        /// Restituisce lo stato attuale della simulazione (in esecuzione o no).
+        /// </summary>
+        [HttpGet("status")]
+        public ActionResult<bool> GetStatus()
         {
-            var result = _simulationService.CalculateAcoPath(graph, startNodeId, endNodeId);
-
-            if (!string.IsNullOrEmpty(result.Error))
-            {
-                return BadRequest(result);
-            }
-
-            return Ok(result);
+            return Ok(_simulationService.IsRunning);
         }
     }
 }

@@ -1,30 +1,37 @@
 ﻿namespace NetworkSimulator.Shared
 {
     /// <summary>
-    /// Rappresenta un collegamento unidirezionale (o arco) tra due nodi nel grafo.
+    /// Rappresenta un collegamento tra due nodi, caratterizzato da una tecnologia di rete specifica.
     /// </summary>
     public class Link
     {
         /// <summary>
-        /// Identificativo univoco del collegamento stesso. 
-        /// Utile per la gestione, come la modifica o l'eliminazione di un link specifico.
+        /// Identificativo univoco del collegamento.
         /// </summary>
         public string Id { get; set; }
-
         /// <summary>
-        /// L'identificativo univoco (la proprietà 'Id') del nodo di PARTENZA del collegamento.
+        /// ID del nodo di partenza.
         /// </summary>
         public string From { get; set; }
-
         /// <summary>
-        /// L'identificativo univoco (la proprietà 'Id') del nodo di DESTINAZIONE del collegamento.
+        /// ID del nodo di destinazione.
         /// </summary>
         public string To { get; set; }
-
         /// <summary>
-        /// Il "peso" o "costo" associato all'attraversamento di questo collegamento.
-        /// Questa è la metrica chiave che gli algoritmi di routing (Dijkstra, ACO, etc.) useranno per calcolare il percorso migliore. Può rappresentare la latenza, la distanza, o il costo economico.
+        /// La tecnologia di rete usata da questo collegamento (es. WiFi, 5G).
         /// </summary>
-        public double Weight { get; set; } = 1;
+        public LinkTechnology Technology { get; set; }
+        /// <summary>
+        /// La larghezza di banda massima del collegamento, in Mbps (Megabit al secondo).
+        /// </summary>
+        public double Bandwidth { get; set; }
+        /// <summary>
+        /// La latenza intrinseca del collegamento (ritardo di propagazione), in ms (millisecondi).
+        /// </summary>
+        public double Latency { get; set; }
+        /// <summary>
+        /// L'affidabilità del collegamento, rappresentata come probabilità (da 0.0 a 1.0) che un pacchetto venga trasmesso con successo. 1.0 significa 100% affidabile.
+        /// </summary>
+        public double Reliability { get; set; } = 1.0;
     }
 }

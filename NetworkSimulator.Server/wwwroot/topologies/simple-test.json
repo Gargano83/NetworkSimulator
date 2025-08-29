@@ -1,0 +1,24 @@
+{
+  "nodes": [
+    {
+      "id": "1",
+      "label": "Sensor 1",
+      "type": "Sensor",
+      "dataRate": 10,
+      "packetSize": 5
+    },
+    {
+      "id": "2",
+      "label": "Internet",
+      "type": "Internet"
+    }
+  ],
+  "links": [
+    {
+      "id": "L1",
+      "from": "1",
+      "to": "2",
+      "technology": "WiFi"
+    }
+  ]
+}

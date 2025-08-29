@@ -1,0 +1,56 @@
+﻿@using NetworkSimulator.Shared
+
+<div class="card bg-light mt-3">
+    <div class="card-header">
+        <strong>Riepilogo Calcolo Percorso</strong>
+    </div>
+    <div class="card-body">
+        <p class="card-text mb-1">
+            <strong>Algoritmo:</strong>
+            <span class="badge bg-primary">@AlgorithmName</span>
+        </p>
+        <p class="card-text mb-1">
+            <strong>Metrica di Ottimizzazione:</strong>
+            <span class="text-capitalize">@Metric</span>
+        </p>
+        <hr />
+        @if (Result != null && Result.Error == null)
+        {
+            <p class="card-text mb-1">
+                <strong>Percorso Scelto:</strong>
+                <code>@string.Join(" → ", Result.Path)</code>
+            </p>
+            <p class="card-text mb-1">
+                <strong>Costo Totale:</strong>
+                <span class="fw-bold text-success">@Result.TotalCost.ToString("F2")</span>
+            </p>
+        }
+        else if (Result != null)
+        {
+            <p class="card-text mb-1 text-danger">
+                <strong>Errore:</strong> @Result.Error
+            </p>
+        }
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// Il risultato del calcolo del percorso da visualizzare.
+    /// Questo parametro viene passato dal componente genitore (NetworkCanvas).
+    /// </summary>
+    [Parameter]
+    public PathResult? Result { get; set; }
+
+    /// <summary>
+    /// Il nome dell'algoritmo utilizzato.
+    /// </summary>
+    [Parameter]
+    public string AlgorithmName { get; set; } = "N/D";
+
+    /// <summary>
+    /// La metrica utilizzata per l'ottimizzazione.
+    /// </summary>
+    [Parameter]
+    public string Metric { get; set; } = "N/D";
+}

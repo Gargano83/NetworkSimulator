@@ -56,6 +56,9 @@ app.UseRouting();
 // La posizione di questa riga (dopo UseRouting e prima di UseAuthorization/Map...) è importante.
 app.UseCors("AllowBlazorClient");
 
+// Abilita la possibilità per il server di servire file statici dalla sua cartella wwwroot.
+app.UseStaticFiles();
+
 // (Opzionale per ora, ma buona norma) Abilita l'autorizzazione.
 app.UseAuthorization();
 

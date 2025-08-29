@@ -2,248 +2,351 @@
 @using Microsoft.JSInterop
 @using NetworkSimulator.Shared
 @using System.Net.Http.Json
+@using Microsoft.AspNetCore.SignalR.Client
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.Json.Serialization
 @inject IJSRuntime JSRuntime
 @inject HttpClient Http
-@implements IDisposable
+@implements IAsyncDisposable
 
-<h3>Simulatore di Rete</h3>
+<h3>Simulatore di Rete Dinamica</h3>
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h5 class="card-title">Carica Topologia Predefinita</h5>
+        <div class="input-group">
+            <select class="form-select" @bind="selectedTopologyFile">
+                <option value="" disabled selected>Seleziona una topologia...</option>
+                <option value="topologies/simple-test.json">Test Semplice</option>
+                <option value="topologies/europe-backbone.json">Dorsale Europea</option>
+            </select>
+            <button class="btn btn-outline-secondary" @onclick="LoadTopology">Carica</button>
+        </div>
+    </div>
+</div>
 
 <div class="controls mb-2">
     <button class="btn btn-primary me-2" @onclick="AddNewNode">Aggiungi Nodo</button>
     <button class="btn btn-danger me-2" @onclick="EnterDeleteNodeMode">Elimina Nodo</button>
-    <button class="btn btn-success" @onclick="EnterAddLinkMode">Aggiungi Collegamento</button>
+    <button class="btn btn-success me-2" @onclick="EnterAddLinkMode">Aggiungi Collegamento</button>
     <button class="btn btn-danger" @onclick="EnterDeleteLinkMode">Elimina Collegamento</button>
 </div>
 
-@if (isAddingLinkMode)
+@if (showAddLinkStatus)
 {
-    <div class="alert alert-info" role="alert">
-        <strong>Modalità Aggiungi Collegamento:</strong> @addLinkStatus
-    </div>
+    <div class="alert alert-info" role="alert"><strong>Modalità Aggiungi Collegamento:</strong> Seleziona il nodo di partenza.</div>
 }
-
 @if (isDeletingNodeMode)
 {
-    <div class="alert alert-danger" role="alert">
-        <strong>Modalità Eliminazione Nodo:</strong> Clicca su un nodo per rimuoverlo.
-    </div>
+    <div class="alert alert-danger" role="alert"><strong>Modalità Eliminazione Nodo:</strong> Clicca su un nodo per rimuoverlo.</div>
 }
-
 @if (isDeletingLinkMode)
 {
-    <div class="alert alert-danger" role="alert">
-        <strong>Modalità Eliminazione:</strong> Clicca su un collegamento per rimuoverlo.
-    </div>
+    <div class="alert alert-danger" role="alert"><strong>Modalità Eliminazione Collegamento:</strong> Clicca su un collegamento per rimuoverlo.</div>
 }
 
 <div class="card mt-3">
     <div class="card-body">
-        <h5 class="card-title">Esegui Simulazione</h5>
-        <div class="row g-3 align-items-center">
-            <div class="col-auto">
-                <label for="startNode" class="col-form-label">Partenza (ID)</label>
-                <input id="startNode" class="form-control" @bind="startNodeInput" />
-            </div>
-            <div class="col-auto">
-                <label for="endNode" class="col-form-label">Destinazione (ID)</label>
-                <input id="endNode" class="form-control" @bind="endNodeInput" />
-            </div>
-            <div class="col-auto">
-                <button class="btn btn-primary mt-4 me-2" @onclick="ExecuteDijkstra">Calcola Dijkstra</button>
-                <button class="btn btn-info mt-4 me-2" @onclick="ExecuteBellmanFord">Calcola Bellman-Ford</button>
-                <button class="btn btn-warning mt-4" @onclick="ExecuteAco">Calcola ACO</button>
-            </div>
-        </div>
-        
-        @if(simulationResult != null)
+        <h5 class="card-title">Controllo Simulazione</h5>
+        @if (isSimulationRunning)
         {
-            // Mostra un messaggio di successo o di errore in base al risultato
-            var alertClass = simulationResult.Error == null ? "alert-success" : "alert-danger";
-            <div class="alert @alertClass mt-3">
-                @if(simulationResult.Error == null)
-                {
-                    <strong>Percorso Trovato:</strong> @string.Join(" -> ", simulationResult.Path) <br/>
-                    <strong>Costo Totale:</strong> @simulationResult.TotalCost
-                }
-                else
-                {
-                    <strong>Errore:</strong> @simulationResult.Error
-                }
-            </div>
+            <button class="btn btn-danger" @onclick="StopSimulation" disabled="@isBusy">Ferma Simulazione</button>
+            <span class="ms-3 text-success"><strong><span class="spinner-border spinner-border-sm"></span> Simulazione in corso...</strong></span>
+        }
+        else
+        {
+            <button class="btn btn-success" @onclick="StartSimulation" disabled="@isBusy">Avvia Simulazione</button>
+        }
+
+        @if (!string.IsNullOrEmpty(simulationStatusMessage))
+        {
+            <div class="alert alert-secondary mt-3 mb-0">@simulationStatusMessage</div>
         }
     </div>
 </div>
 
-<div id="network-canvas" style="width: 100%; height: 600px; border: 1px solid lightgray;"></div>
+@if (isSimulationRunning && latestPathResult != null)
+{
+    <ResultsPanel Result="latestPathResult" AlgorithmName="@latestAlgorithmUsed" Metric="@latestMetricUsed" />
+}
+
+<div id="network-canvas" style="width: 100%; height: 400px; border: 1px solid lightgray; margin-top: 1rem;"></div>
 
 @code {
     private int nodeCounter = 1;
     private DotNetObjectReference<NetworkCanvas> objRef;
+    private HubConnection? hubConnection;
 
-    private static bool isAddingLinkMode = false;
-    private static string addLinkStatus = "";
-    private static string? firstNodeIdSelected = null;
+    // --- Variabili di Stato (semplificate) ---
+    private bool showAddLinkStatus = false;
     private static bool isDeletingLinkMode = false;
     private static bool isDeletingNodeMode = false;
-
     private int linkCounter = 1;
 
-    // Liste per mantenere lo stato del grafo in C#
     private List<Node> nodes = new List<Node>();
     private List<Link> links = new List<Link>();
 
-    // Variabili per l'input e il risultato della simulazione
-    private string startNodeInput = "1";
-    private string endNodeInput = "";
-    private PathResult? simulationResult;
+    private bool isSimulationRunning = false;
+    private bool isBusy = false;
+    private string simulationStatusMessage = "Disegna una rete e premi 'Avvia Simulazione'.";
 
-    // Metodo del ciclo di vita: viene chiamato dopo che il componente è stato renderizzato.
-    // È il momento perfetto per inizializzare le librerie JS.
+    private string selectedTopologyFile = "";
+
+    private PathResult? latestPathResult;
+    private string latestAlgorithmUsed = "";
+    private string latestMetricUsed = "";
+
+    /// <summary>
+    /// All'avvio del componente, inizializza la connessione SignalR.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(new Uri(Http.BaseAddress, "simulationhub"))
+            .Build();
+
+        // Definisce cosa fare quando il server invia un messaggio "UpdateSimulationState"
+        hubConnection.On<List<DataPacket>, List<Link>>("UpdateSimulationState", (packets, updatedLinks) =>
+        {
+            Console.WriteLine($"[SignalR] Ricevuto aggiornamento! Numero di pacchetti: {packets.Count}");
+
+            // Invochiamo il metodo JS per aggiornare la visualizzazione dei pacchetti
+            JSRuntime.InvokeVoidAsync("networkGraph.updatePackets", packets);
+            StateHasChanged();
+        });
+
+        hubConnection.On<PathResult, string, string>("PathCalculated", (result, algorithm, metric) =>
+        {
+            latestPathResult = result;
+            latestAlgorithmUsed = algorithm;
+            latestMetricUsed = metric;
+            StateHasChanged();
+        });
+
+        await hubConnection.StartAsync();
+        Console.WriteLine("SignalR Connection Started.");
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            // Passiamo un riferimento di questa istanza a JS
             objRef = DotNetObjectReference.Create(this);
             await JSRuntime.InvokeVoidAsync("networkGraph.init", "network-canvas", objRef);
         }
     }
 
-    private async Task AddNewNode()
+    /// <summary>
+    /// Carica una topologia di rete da un file JSON e la visualizza.
+    /// </summary>
+    private async Task LoadTopology()
     {
-        var newNode = new Node
+        if (string.IsNullOrEmpty(selectedTopologyFile)) return;
+
+        // Ferma qualsiasi simulazione in corso
+        if (isSimulationRunning) await StopSimulation();
+
+        try
         {
-            Id = nodeCounter.ToString(),
-            Label = ""
-        };
-        // Aggiungi il nodo alla lista di stato
-        nodes.Add(newNode);
-
-        // La label visualizzata mostra solo l'ID all'inizio
-        string displayLabel = $"ID: {newNode.Id}";
-
-        // Chiama la funzione JS 'addNode' per aggiungere il nuovo nodo al grafo
-        await JSRuntime.InvokeVoidAsync("networkGraph.addNode", new {
-            id = newNode.Id,
-            label = displayLabel
-        });
-        nodeCounter++;
-    }
-
-    private void EnterAddLinkMode()
-    {
-        isAddingLinkMode = true;
-        isDeletingLinkMode = false;
-        isDeletingNodeMode = false;
-        firstNodeIdSelected = null;
-        addLinkStatus = "Seleziona il nodo di partenza.";
-        StateHasChanged();
-    }
-
-    private void EnterDeleteLinkMode()
-    {
-        // Attiva la modalità cancellazione e disattiva le altre
-        isDeletingLinkMode = true;
-        isAddingLinkMode = false; 
-        isDeletingNodeMode = false;
-        StateHasChanged();
-    }
-
-    // Nuovo metodo per entrare in modalità eliminazione nodo
-    private void EnterDeleteNodeMode()
-    {
-        isDeletingNodeMode = true;
-        isAddingLinkMode = false;
-        isDeletingLinkMode = false;
-        StateHasChanged();
-    }
-
-    [JSInvokable]
-    public async Task HandleNodeClick(string nodeId)
-    {
-        if (isDeletingNodeMode)
-        {
-            // 1. Rimuovi il nodo dalla lista di stato
-            var nodeToRemove = nodes.FirstOrDefault(n => n.Id == nodeId);
-            if (nodeToRemove != null)
+            // Usa HttpClient per leggere il file JSON dalla cartella wwwroot
+            var graphData = await Http.GetFromJsonAsync<GraphData>(selectedTopologyFile, jsonOptions);
+            if (graphData?.Nodes != null && graphData.Links != null)
             {
-                nodes.Remove(nodeToRemove);
-            
-                // 2. Trova e rimuovi TUTTI i link connessi a questo nodo
-                var linksToRemove = links.Where(l => l.From == nodeId || l.To == nodeId).ToList();
-                foreach (var link in linksToRemove)
+                // Assegna metriche di default ai link caricati
+                foreach (var link in graphData.Links)
                 {
-                    links.Remove(link);
-                    // Rimuovi anche dal canvas
-                    await JSRuntime.InvokeVoidAsync("networkGraph.removeLink", link.Id);
+                    AssignDefaultMetrics(link);
                 }
 
-                // 3. Chiama la funzione JS per rimuovere il nodo dal canvas
-                await JSRuntime.InvokeVoidAsync("networkGraph.removeNode", nodeId);
+                // Aggiorna lo stato del componente con i nuovi dati
+                nodes = graphData.Nodes;
+                links = graphData.Links;
+
+                // Aggiorna i contatori per evitare ID duplicati se si aggiungono nuovi nodi/link
+                nodeCounter = nodes.Count > 0 ? nodes.Max(n => int.Parse(n.Id)) + 1 : 1;
+                linkCounter = links.Count > 0 ? links.Max(l => int.Parse(l.Id.Substring(1))) + 1 : 1;
+
+                // Prima di passare i dati a JS, creiamo degli oggetti anonimi dove convertiamo esplicitamente gli enum in stringhe.
+                var nodesForJs = nodes.Select(n => new
+                {
+                    id = n.Id,
+                    label = n.Label,
+                    type = n.Type.ToString()
+                });
+
+                var linksForJs = links.Select(l => new
+                {
+                    id = l.Id,
+                    from = l.From,
+                    to = l.To,
+                    label = $"L:{l.Latency} B:{l.Bandwidth}",
+                    technology = l.Technology.ToString()
+                });
+
+                // Chiama una nuova funzione JS per disegnare l'intera topologia
+                await JSRuntime.InvokeVoidAsync("networkGraph.drawTopology", nodesForJs, linksForJs);
+                StateHasChanged();
             }
-
-            // 4. Esci dalla modalità
-            isDeletingNodeMode = false;
-            StateHasChanged();
-            return; // Esci per non eseguire la logica di aggiunta link
         }
-
-        if (!isAddingLinkMode) return;
-
-        if (firstNodeIdSelected == null)
+        catch (Exception ex)
         {
-            // È il primo nodo cliccato
-            firstNodeIdSelected = nodeId;
-            addLinkStatus = $"Nodo di partenza '{firstNodeIdSelected}' selezionato. Seleziona il nodo di destinazione.";
-            // Forza l'aggiornamento della UI
-            StateHasChanged(); 
+            // Gestisci eventuali errori di caricamento o parsing del JSON
+            simulationStatusMessage = $"Errore nel caricamento della topologia: {ex.Message}";
+        }
+    }
+
+    // Oggetto per configurare come il JSON viene letto
+    private JsonSerializerOptions jsonOptions = new JsonSerializerOptions
+    {
+        // Ignora le differenze tra maiuscole e minuscole (es. "type" in JSON e "Type" in C#)
+        PropertyNameCaseInsensitive = true,
+        // --- QUESTA È LA REGOLA CHIAVE ---
+        // Aggiunge il "traduttore" che converte le stringhe in enum
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    /// <summary>
+    /// Invia la topologia al backend e avvia il motore di simulazione.
+    /// </summary>
+    private async Task StartSimulation()
+    {
+        latestPathResult = null;
+        isBusy = true;
+        simulationStatusMessage = "Avvio della simulazione in corso...";
+        var graphData = new GraphData { Nodes = nodes, Links = links };
+        var response = await Http.PostAsJsonAsync("api/simulation/start", graphData);
+
+        if (response.IsSuccessStatusCode)
+        {
+            isSimulationRunning = true;
+            simulationStatusMessage = "Simulazione avviata. In attesa di generazione traffico...";
         }
         else
         {
-            // Secondo nodo cliccato: prima di creare il link, chiediamo il peso.
-            var weight = await JSRuntime.InvokeAsync<double>("networkGraph.promptForWeight", firstNodeIdSelected, nodeId);
-
-            var newLink = new Link
-            {
-                Id = $"L{linkCounter++}",
-                From = firstNodeIdSelected,
-                To = nodeId,
-                Weight = weight // Uso il peso inserito dall'utente
-            };
-            // Aggiungi il link alla lista di stato
-            links.Add(newLink);
-
-            // Passa a JS un oggetto che include l'etichetta per la visualizzazione
-            await JSRuntime.InvokeVoidAsync("networkGraph.addLink", new {
-                id = newLink.Id,
-                from = newLink.From,
-                to = newLink.To,
-                label = newLink.Weight.ToString()
-            });
-
-            // Usciamo dalla modalità "Aggiungi Collegamento"
-            isAddingLinkMode = false;
-            firstNodeIdSelected = null;
-            StateHasChanged();
+            isSimulationRunning = false;
+            simulationStatusMessage = $"Errore avvio simulazione: {await response.Content.ReadAsStringAsync()}";
         }
+        isBusy = false;
+    }
+
+    /// <summary>
+    /// Invia il comando per fermare la simulazione sul backend.
+    /// </summary>
+    private async Task StopSimulation()
+    {
+        isBusy = true;
+        simulationStatusMessage = "Arresto della simulazione in corso...";
+        var response = await Http.PostAsync("api/simulation/stop", null);
+        if (response.IsSuccessStatusCode)
+        {
+            isSimulationRunning = false;
+            simulationStatusMessage = "Simulazione fermata.";
+            latestPathResult = null;
+            await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlights");
+        }
+        else
+        {
+            isSimulationRunning = true; // La simulazione è ancora in corso se la chiamata fallisce
+            simulationStatusMessage = "Errore durante l'arresto della simulazione.";
+        }
+        isBusy = false;
+    }
+
+    private async Task AddNewNode()
+    {
+        var typeAsString = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Tipo di nodo? (Sensor, Gateway, Router, Internet)", "Sensor");
+        Enum.TryParse(typeof(NodeType), typeAsString, true, out var nodeTypeObj);
+        NodeType nodeType = (NodeType)(nodeTypeObj ?? NodeType.Sensor);
+        var newNode = new Node { Id = nodeCounter.ToString(), Label = $"{nodeType} {nodeCounter}", Type = nodeType };
+        if (nodeType == NodeType.Sensor)
+        {
+            newNode.DataRate = 10;  // Valore di default per la quantità di dati (es. 10 KB/s)
+            newNode.PacketSize = 5;   // Valore di default per la dimensione dei pacchetti (es. 5 KB)
+            newNode.LatencyRequirement = 100; // Valore di default per i requisiti di latenza
+        }
+        nodes.Add(newNode);
+        await JSRuntime.InvokeVoidAsync("networkGraph.addNode", new { id = newNode.Id, label = newNode.Label, type = newNode.Type.ToString() });
+        nodeCounter++;
+    }
+
+    private async Task EnterAddLinkMode()
+    {
+        showAddLinkStatus = true;
+        isDeletingLinkMode = false;
+        isDeletingNodeMode = false;
+        StateHasChanged();
+        await JSRuntime.InvokeVoidAsync("networkGraph.enterAddLinkMode");
+    }
+    
+    private void EnterDeleteLinkMode() { 
+        isDeletingLinkMode = true; 
+        showAddLinkStatus = false; 
+        isDeletingNodeMode = false; 
+        StateHasChanged(); 
+    }
+
+    private async Task EnterDeleteNodeMode()
+    {
+        isDeletingNodeMode = true;
+        showAddLinkStatus = false;
+        isDeletingLinkMode = false;
+        StateHasChanged();
+        await JSRuntime.InvokeVoidAsync("networkGraph.enterDeleteNodeMode");
+    }
+
+    [JSInvokable]
+    public async Task CreateLink(string fromNodeId, string toNodeId)
+    {
+        showAddLinkStatus = false;
+
+        var techAsString = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Tecnologia? (Wired, WiFi, FiveG, LoRa, Satellite)", "WiFi");
+        Enum.TryParse(typeof(LinkTechnology), techAsString, true, out var techObj);
+        LinkTechnology technology = (LinkTechnology)(techObj ?? LinkTechnology.WiFi);
+
+        var newLink = new Link { Id = $"L{linkCounter++}", From = fromNodeId, To = toNodeId, Technology = technology };
+        AssignDefaultMetrics(newLink);
+        links.Add(newLink);
+
+        await JSRuntime.InvokeVoidAsync("networkGraph.addLink", new { id = newLink.Id, from = newLink.From, to = newLink.To, label = $"L:{newLink.Latency} B:{newLink.Bandwidth}", technology = newLink.Technology.ToString() });
+        StateHasChanged();
+    }
+
+    // AGGIUNGI QUESTO NUOVO METODO [JSInvokable]
+    [JSInvokable]
+    public async Task DeleteNode(string nodeId)
+    {
+        // Se non siamo in modalità eliminazione, non fare nulla (doppio controllo di sicurezza)
+        if (!isDeletingNodeMode) return;
+
+        var nodeToRemove = nodes.FirstOrDefault(n => n.Id == nodeId);
+        if (nodeToRemove != null)
+        {
+            nodes.Remove(nodeToRemove);
+            var linksToRemove = links.Where(l => l.From == nodeId || l.To == nodeId).ToList();
+            foreach (var link in linksToRemove)
+            {
+                links.Remove(link);
+                await JSRuntime.InvokeVoidAsync("networkGraph.removeLink", link.Id);
+            }
+            await JSRuntime.InvokeVoidAsync("networkGraph.removeNode", nodeId);
+        }
+
+        // Esci dalla modalità dopo aver cancellato
+        isDeletingNodeMode = false;
+        StateHasChanged();
     }
 
     [JSInvokable]
     public async Task HandleLinkClick(string linkId)
     {
         if (!isDeletingLinkMode) return;
-
-        // 1. Rimuovi il link dalla nostra lista di stato
         var linkToRemove = links.FirstOrDefault(l => l.Id == linkId);
         if (linkToRemove != null)
         {
             links.Remove(linkToRemove);
-        
-            // 2. Chiama la funzione JS per rimuovere il link dal canvas
             await JSRuntime.InvokeVoidAsync("networkGraph.removeLink", linkId);
         }
-
-        // 3. Esci dalla modalità cancellazione
         isDeletingLinkMode = false;
         StateHasChanged();
     }
@@ -254,120 +357,82 @@
         var nodeToUpdate = nodes.FirstOrDefault(n => n.Id == nodeId);
         if (nodeToUpdate == null) return;
 
-        // Chiedi all'utente la NUOVA parte dell'etichetta, usando la vecchia come default
-        string userLabel = nodeToUpdate.Label.Contains("\n") ? nodeToUpdate.Label.Split('\n')[1] : "";
-        var newLabelPart = await JSRuntime.InvokeAsync<string>("networkGraph.promptForLabel", userLabel);
+        var newLabel = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Modifica etichetta:", nodeToUpdate.Label);
+        nodeToUpdate.Label = newLabel;
 
-        string fullNewLabel = $"ID: {nodeId}\n{newLabelPart}";
+        if (nodeToUpdate.Type == NodeType.Sensor)
+        {
+            var newDataRate = await JSRuntime.InvokeAsync<double>(
+                "networkGraph.promptForValue",
+                "Modifica Data Rate (KB/s):",
+                nodeToUpdate.DataRate ?? 10.0);
 
-        // Aggiorna lo stato in C#
-        nodeToUpdate.Label = fullNewLabel;
+            var newPacketSize = await JSRuntime.InvokeAsync<double>(
+                "networkGraph.promptForValue",
+                "Modifica Dimensione Pacchetto (KB):",
+                nodeToUpdate.PacketSize ?? 5.0);
 
-        // Aggiorna la visualizzazione in JS
-        await JSRuntime.InvokeVoidAsync("networkGraph.updateNode", nodeId, fullNewLabel);
+            // Aggiorna le proprietà del modello in C#
+            nodeToUpdate.DataRate = newDataRate;
+            nodeToUpdate.PacketSize = newPacketSize;
+        }
+
+        await JSRuntime.InvokeVoidAsync("networkGraph.updateNode", nodeId, newLabel);
     }
 
     [JSInvokable]
     public async Task HandleLinkDoubleClick(string linkId)
     {
-        // 1. Trova il link nella nostra lista di stato
         var linkToUpdate = links.FirstOrDefault(l => l.Id == linkId);
         if (linkToUpdate == null) return;
 
-        // 2. Chiedi all'utente il nuovo peso (riutilizzando la funzione JS)
-        var newWeight = await JSRuntime.InvokeAsync<double>("networkGraph.promptForWeight", linkToUpdate.From, linkToUpdate.To);
+        // 1. Riceviamo l'input come STRINGA per evitare errori di conversione immediati.
+        var latencyAsString = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Modifica la latenza (ms)", linkToUpdate.Latency.ToString(CultureInfo.InvariantCulture));
 
-        // 3. Aggiorna il peso nella nostra lista di stato
-        linkToUpdate.Weight = newWeight;
-
-        // 4. Chiama la nuova funzione JS per aggiornare la visualizzazione
-        await JSRuntime.InvokeVoidAsync("networkGraph.updateLink", linkId, newWeight);
-    }
-
-    // Metodo che chiama l'API per eseguire Dijkstra
-    private async Task ExecuteDijkstra()
-    {
-        simulationResult = null; // Resetta il risultato precedente
-        // Chiama la funzione JS per resettare eventuali percorsi precedenti
-        await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlight");
-
-        var graphData = new GraphData { Nodes = nodes, Links = links };
-
-        var response = await Http.PostAsJsonAsync($"api/simulation/dijkstra/{startNodeInput}/{endNodeInput}", graphData);
-
-        if (response.IsSuccessStatusCode)
+        // 2. Convertiamo la stringa in un numero in modo sicuro. Se l'input non è valido, manteniamo il vecchio valore.
+        if (!double.TryParse(latencyAsString, NumberStyles.Any, CultureInfo.InvariantCulture, out double newLatency))
         {
-            simulationResult = await response.Content.ReadFromJsonAsync<PathResult>();
-            if (simulationResult?.Path != null)
-            {
-                // Se il percorso è stato trovato, chiama la funzione JS per evidenziarlo
-                await JSRuntime.InvokeVoidAsync("networkGraph.highlightPath", simulationResult.Path);
-            }
+            newLatency = linkToUpdate.Latency; // Mantiene il valore originale in caso di errore
         }
-        else
-        {
-            simulationResult = new PathResult 
-            { 
-                Error = $"Errore dal server: {response.StatusCode} ({response.ReasonPhrase})" 
-            };
-        }
-    }
 
-    private async Task ExecuteBellmanFord()
-    {
-        simulationResult = null;
-        await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlight");
+        // 3. Ora che il primo input è stato gestito, procediamo con il secondo.
+        var bandwidthAsString = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Modifica la banda (Mbps)", linkToUpdate.Bandwidth.ToString(CultureInfo.InvariantCulture));
+        if (!double.TryParse(bandwidthAsString, NumberStyles.Any, CultureInfo.InvariantCulture, out double newBandwidth))
+        {
+            newBandwidth = linkToUpdate.Bandwidth; // Mantiene il valore originale in caso di errore
+        }
+
+        // 4. Aggiorniamo lo stato in C# con i nuovi valori.
+        linkToUpdate.Latency = newLatency;
+        linkToUpdate.Bandwidth = newBandwidth;
+
+        // 5. Ora che l'esecuzione è arrivata alla fine, aggiorniamo la visualizzazione.
+        string displayLabel = $"L:{newLatency.ToString(CultureInfo.InvariantCulture)} B:{newBandwidth.ToString(CultureInfo.InvariantCulture)}";
+        await JSRuntime.InvokeVoidAsync("networkGraph.updateLink", linkId, displayLabel);
+    }
     
-        var graphData = new GraphData { Nodes = nodes, Links = links };
+    private void AssignDefaultMetrics(Link link)
+    {
+        switch (link.Technology)
+        {
+            case LinkTechnology.Wired: link.Latency = 2; link.Bandwidth = 1000; link.Reliability = 0.999; break;
+            case LinkTechnology.WiFi: link.Latency = 15; link.Bandwidth = 300; link.Reliability = 0.98; break;
+            case LinkTechnology.FiveG: link.Latency = 20; link.Bandwidth = 500; link.Reliability = 0.99; break;
+            case LinkTechnology.LoRa: link.Latency = 1000; link.Bandwidth = 0.05; link.Reliability = 0.95; break;
+            case LinkTechnology.Satellite: link.Latency = 600; link.Bandwidth = 100; link.Reliability = 0.97; break;
+        }
+    }
     
-        // L'unica differenza è l'URL che viene chiamato
-        var response = await Http.PostAsJsonAsync($"api/simulation/bellman-ford/{startNodeInput}/{endNodeInput}", graphData);
-
-        if (response.IsSuccessStatusCode)
-        {
-            simulationResult = await response.Content.ReadFromJsonAsync<PathResult>();
-            if (simulationResult?.Path != null)
-            {
-                await JSRuntime.InvokeVoidAsync("networkGraph.highlightPath", simulationResult.Path);
-            }
-        }
-        else
-        {
-            simulationResult = new PathResult 
-            { 
-                Error = $"Errore dal server: {response.StatusCode} ({response.ReasonPhrase})" 
-            };
-        }
-    }
-
-    private async Task ExecuteAco()
+    /// <summary>
+    /// Metodo essenziale per chiudere la connessione SignalR e il riferimento DotNet
+    /// quando l'utente lascia la pagina, per evitare perdite di memoria.
+    /// </summary>
+    public async ValueTask DisposeAsync()
     {
-        simulationResult = null;
-        await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlight");
-        var graphData = new GraphData { Nodes = nodes, Links = links };
-
-        var response = await Http.PostAsJsonAsync($"api/simulation/aco/{startNodeInput}/{endNodeInput}", graphData);
-        
-        if (response.IsSuccessStatusCode)
+        if (hubConnection is not null)
         {
-            simulationResult = await response.Content.ReadFromJsonAsync<PathResult>();
-            if (simulationResult?.Path != null)
-            {
-                await JSRuntime.InvokeVoidAsync("networkGraph.highlightPath", simulationResult.Path);
-            }
+            await hubConnection.DisposeAsync();
         }
-        else
-        {
-            simulationResult = new PathResult 
-            { 
-                Error = $"Errore dal server: {response.StatusCode} ({response.ReasonPhrase})" 
-            };
-        }
-    }
-
-    // Metodo per il cleanup
-    public void Dispose()
-    {
         objRef?.Dispose();
     }
 }

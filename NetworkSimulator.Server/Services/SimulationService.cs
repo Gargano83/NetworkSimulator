@@ -1,31 +1,174 @@
-﻿using NetworkSimulator.Shared;
+﻿using Microsoft.AspNetCore.SignalR;
+using NetworkSimulator.Server.Hubs;
+using NetworkSimulator.Shared;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 
 namespace NetworkSimulator.Server.Services
 {
-    public class SimulationService
+    /// <summary>
+    /// Gestisce la logica principale della simulazione di rete in tempo reale.
+    /// Mantiene lo stato della rete e dei pacchetti, e scandisce il tempo della simulazione.
+    /// </summary>
+    public class SimulationService : IDisposable
     {
-        public PathResult CalculateDijkstraPath(GraphData graph, string startNodeId, string endNodeId)
+        private readonly IHubContext<SimulationHub> _hubContext;
+        private Timer? _timer;
+        private GraphData? _networkGraph;
+        private List<DataPacket> _packets = new List<DataPacket>();
+        private readonly Random _random = new Random();
+        private int _simulationTime = 0;
+        public bool IsRunning { get; private set; } = false;
+
+        /// <summary>
+        /// Costruttore che riceve il contesto dell'Hub SignalR per poter comunicare con i client.
+        /// </summary>
+        public SimulationService(IHubContext<SimulationHub> hubContext)
         {
-            // 1. Inizializzazione
+            _hubContext = hubContext;
+        }
+
+        public void StartSimulation(GraphData graph)
+        {
+            if (IsRunning) return;
+            _networkGraph = graph;
+            _packets.Clear();
+            _simulationTime = 0;
+            IsRunning = true;
+            _timer = new Timer(SimulationStep, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+            Console.WriteLine("Simulazione avviata.");
+        }
+
+        public void StopSimulation()
+        {
+            _timer?.Change(Timeout.Infinite, 0);
+            IsRunning = false;
+            Console.WriteLine("Simulazione fermata.");
+        }
+
+        private void SimulationStep(object? state)
+        {
+            if (!IsRunning || _networkGraph == null) return;
+            _simulationTime++;
+            Console.WriteLine($"--- Simulation Tick: {_simulationTime}s ---");
+            UpdateNetworkConditions();
+            GenerateTraffic();
+            RouteAndMovePackets();
+            BroadcastState();
+        }
+
+        /// <summary>
+        /// Simula le variazioni delle condizioni di rete (es. congestione, interferenze).
+        /// </summary>
+        private void UpdateNetworkConditions()
+        {
+            if (_networkGraph?.Links == null) return;
+            foreach (var link in _networkGraph.Links)
+            {
+                // Simula una variazione casuale della latenza (jitter)
+                link.Latency += (_random.NextDouble() - 0.5) * 2; // Variazione di +/- 1ms
+                if (link.Latency < 1) link.Latency = 1;
+            }
+        }
+
+        /// <summary>
+        /// Genera nuovi pacchetti di dati dai nodi di tipo Sensore.
+        /// </summary>
+        private void GenerateTraffic()
+        {
+            if (_networkGraph?.Nodes == null) return;
+            var sensors = _networkGraph.Nodes.Where(n => n.Type == NodeType.Sensor);
+            foreach (var sensor in sensors)
+            {
+                // La probabilità di generare un pacchetto dipende dal rapporto tra DataRate e PacketSize
+                if (_random.NextDouble() < (sensor.DataRate / (sensor.PacketSize ?? 1.0)))
+                {
+                    // La destinazione "Internet" deve esistere nella topologia
+                    var internetNode = _networkGraph.Nodes.FirstOrDefault(n => n.Type == NodeType.Internet);
+                    if (internetNode == null) continue;
+
+                    var pathResult = CalculateDijkstraPath(_networkGraph, sensor.Id, internetNode.Id, "latency");
+
+                    // Crea il pacchetto solo se un percorso valido esiste
+                    if (pathResult.Path != null && pathResult.Path.Count > 1)
+                    {
+                        _hubContext.Clients.All.SendAsync("PathCalculated", pathResult, "Dijkstra", "latency");
+
+                        var newPacket = new DataPacket
+                        {
+                            SourceId = sensor.Id,
+                            DestinationId = internetNode.Id,
+                            CurrentLocationId = sensor.Id,
+                            Size = sensor.PacketSize ?? 1,
+                            Priority = sensor.LatencyRequirement < 50 ? 1 : 5,
+                            FullPath = pathResult.Path // Salva l'intero percorso nel pacchetto
+                        };
+                        _packets.Add(newPacket);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Per ogni pacchetto, decide il prossimo passo e aggiorna la sua posizione.
+        /// </summary>
+        private void RouteAndMovePackets()
+        {
+            // Rimuove i pacchetti che hanno completato il loro percorso
+            _packets.RemoveAll(p => p.FullPath != null && p.PathIndex >= p.FullPath.Count - 1);
+
+            foreach (var packet in _packets)
+            {
+                if (packet.FullPath == null) continue;
+
+                // Incrementa l'indice per avanzare al prossimo nodo nel percorso pianificato
+                packet.PathIndex++;
+
+                // Aggiorna la posizione precedente e attuale
+                packet.PreviousLocationId = packet.FullPath[packet.PathIndex - 1];
+                packet.CurrentLocationId = packet.FullPath[packet.PathIndex];
+            }
+        }
+
+        /// <summary>
+        /// Invia lo stato corrente della simulazione a tutti i client del frontend tramite SignalR.
+        /// </summary>
+        private async void BroadcastState()
+        {
+            try
+            {
+                // Invia la lista dei pacchetti e dei link (con le loro latenze aggiornate)
+                await _hubContext.Clients.All.SendAsync("UpdateSimulationState", _packets, _networkGraph.Links);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Errore durante il broadcast SignalR: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Algoritmo di Dijkstra corretto per usare le nuove metriche.
+        /// </summary>
+        private PathResult CalculateDijkstraPath(GraphData graph, string startNodeId, string endNodeId, string metric)
+        {
             var distances = new Dictionary<string, double>();
-            var predecessors = new Dictionary<string, string>();
+            var predecessors = new Dictionary<string, string?>();
             var priorityQueue = new PriorityQueue<string, double>();
             var visited = new HashSet<string>();
 
             foreach (var node in graph.Nodes)
             {
                 distances[node.Id] = double.PositiveInfinity;
+                predecessors[node.Id] = null;
             }
 
-            if (!distances.ContainsKey(startNodeId))
-            {
-                return new PathResult { Error = "Nodo di partenza non trovato." };
-            }
+            if (!distances.ContainsKey(startNodeId)) return new PathResult { Error = "Nodo di partenza non trovato." };
 
             distances[startNodeId] = 0;
             priorityQueue.Enqueue(startNodeId, 0);
 
-            // 2. Ciclo principale dell'algoritmo
             while (priorityQueue.Count > 0)
             {
                 var currentNodeId = priorityQueue.Dequeue();
@@ -33,13 +176,16 @@ namespace NetworkSimulator.Server.Services
                 if (visited.Contains(currentNodeId)) continue;
                 visited.Add(currentNodeId);
 
-                if (currentNodeId == endNodeId) break; // Ottimizzazione: fermarsi se la destinazione è stata raggiunta
+                if (currentNodeId == endNodeId) break;
 
                 var outgoingLinks = graph.Links.Where(l => l.From == currentNodeId);
                 foreach (var link in outgoingLinks)
                 {
                     var neighborNodeId = link.To;
-                    var newDistance = distances[currentNodeId] + link.Weight;
+                    if (!distances.ContainsKey(neighborNodeId)) continue;
+
+                    // ORA QUESTO CALCOLO È CORRETTO CON LE NUOVE METRICHE
+                    var newDistance = distances[currentNodeId] + GetMetricValue(link, metric);
 
                     if (newDistance < distances[neighborNodeId])
                     {
@@ -50,19 +196,15 @@ namespace NetworkSimulator.Server.Services
                 }
             }
 
-            // 3. Ricostruzione del percorso
-            if (!predecessors.ContainsKey(endNodeId))
-            {
-                return new PathResult { Error = "Nessun percorso trovato." };
-            }
-
             var path = new List<string>();
             var current = endNodeId;
             while (current != null)
             {
                 path.Insert(0, current);
-                predecessors.TryGetValue(current, out current);
+                current = predecessors.GetValueOrDefault(current);
             }
+
+            if (path.FirstOrDefault() != startNodeId) return new PathResult { Error = "Nessun percorso trovato." };
 
             return new PathResult
             {
@@ -71,189 +213,35 @@ namespace NetworkSimulator.Server.Services
             };
         }
 
-        public PathResult CalculateBellmanFordPath(GraphData graph, string startNodeId, string endNodeId)
+        /// <summary>
+        /// Funzione helper che traduce le proprietà di un link in un "costo" da minimizzare.
+        /// </summary>
+        private static double GetMetricValue(Link link, string metric)
         {
-            // 1. Inizializzazione
-            var distances = new Dictionary<string, double>();
-            var predecessors = new Dictionary<string, string?>();
-
-            foreach (var node in graph.Nodes)
+            switch (metric.ToLower())
             {
-                distances[node.Id] = double.PositiveInfinity;
-                predecessors[node.Id] = null;
+                case "bandwidth":
+                    // Vogliamo massimizzare la banda, quindi minimizziamo il suo inverso.
+                    // Si aggiunge un valore piccolo per evitare la divisione per zero.
+                    return 1.0 / (link.Bandwidth + 0.0001);
+
+                case "reliability":
+                    // Vogliamo massimizzare l'affidabilità (vicina a 1.0), quindi minimizziamo l'inaffidabilità (1.0 - reliability).
+                    return 1.0 - link.Reliability;
+
+                case "latency":
+                default:
+                    // Vogliamo minimizzare la latenza, quindi usiamo il suo valore diretto.
+                    return link.Latency;
             }
-
-            if (!distances.ContainsKey(startNodeId))
-            {
-                return new PathResult { Error = "Nodo di partenza non trovato." };
-            }
-            distances[startNodeId] = 0;
-
-            // 2. Rilassamento degli archi (ciclo principale)
-            // L'algoritmo ripete il ciclo V-1 volte (V = numero di nodi)
-            for (int i = 0; i < graph.Nodes.Count - 1; i++)
-            {
-                foreach (var link in graph.Links)
-                {
-                    if (distances[link.From] != double.PositiveInfinity &&
-                        distances[link.From] + link.Weight < distances[link.To])
-                    {
-                        distances[link.To] = distances[link.From] + link.Weight;
-                        predecessors[link.To] = link.From;
-                    }
-                }
-            }
-
-            // 3. Controllo per cicli di peso negativo
-            // Se riusciamo a migliorare ancora un percorso, significa che c'è un ciclo negativo.
-            foreach (var link in graph.Links)
-            {
-                if (distances[link.From] != double.PositiveInfinity && distances[link.From] + link.Weight < distances[link.To])
-                {
-                    return new PathResult { Error = "Rilevato ciclo di peso negativo. Impossibile calcolare il percorso." };
-                }
-            }
-
-            // 4. Ricostruzione del percorso (identica a Dijkstra)
-            if (distances[endNodeId] == double.PositiveInfinity)
-            {
-                return new PathResult { Error = "Nessun percorso trovato dalla partenza alla destinazione." };
-            }
-
-            var path = new List<string>();
-            var current = endNodeId;
-            while (current != null)
-            {
-                path.Insert(0, current);
-                current = predecessors[current];
-            }
-
-            return new PathResult
-            {
-                Path = path,
-                TotalCost = distances[endNodeId]
-            };
         }
 
-        public PathResult CalculateAcoPath(GraphData graph, string startNodeId, string endNodeId)
+        /// <summary>
+        /// Ferma il timer quando il servizio viene eliminato per evitare perdite di memoria.
+        /// </summary>
+        public void Dispose()
         {
-            // 1. Parametri dell'algoritmo (potrai "giocarci" per la tesi)
-            int numberOfAnts = 10;
-            int numberOfIterations = 50;
-            double evaporationRate = 0.5; // Quanto feromone evapora a ogni iterazione
-            double alpha = 1.0; // Importanza del feromone
-            double beta = 2.0;  // Importanza della visibilità (euristica)
-
-            var random = new Random();
-
-            // Inizializza i livelli di feromone su ogni arco a un piccolo valore
-            var pheromones = new Dictionary<(string, string), double>();
-            foreach (var link in graph.Links)
-            {
-                pheromones[(link.From, link.To)] = 0.1;
-            }
-
-            PathResult bestPathSoFar = new PathResult { TotalCost = double.PositiveInfinity };
-
-            // 2. Ciclo principale delle iterazioni
-            for (int i = 0; i < numberOfIterations; i++)
-            {
-                var antPaths = new List<PathResult>();
-
-                // 3. Muovi ogni formica
-                for (int ant = 0; ant < numberOfAnts; ant++)
-                {
-                    var currentPath = BuildPathForAnt(graph, startNodeId, endNodeId, pheromones, alpha, beta, random);
-                    if (currentPath.Path != null)
-                    {
-                        antPaths.Add(currentPath);
-                    }
-                }
-
-                // 4. Aggiorna il feromone
-                // Evaporazione
-                foreach (var key in pheromones.Keys.ToList())
-                {
-                    pheromones[key] *= (1 - evaporationRate);
-                }
-
-                // Deposito
-                foreach (var path in antPaths)
-                {
-                    double pheromoneToAdd = 1.0 / path.TotalCost;
-                    for (int j = 0; j < path.Path.Count - 1; j++)
-                    {
-                        var fromNode = path.Path[j];
-                        var toNode = path.Path[j + 1];
-                        pheromones[(fromNode, toNode)] += pheromoneToAdd;
-                    }
-                }
-
-                // Aggiorna il percorso migliore trovato finora
-                var bestPathInIteration = antPaths.OrderBy(p => p.TotalCost).FirstOrDefault();
-                if (bestPathInIteration != null && bestPathInIteration.TotalCost < bestPathSoFar.TotalCost)
-                {
-                    bestPathSoFar = bestPathInIteration;
-                }
-            }
-
-            if (bestPathSoFar.Path == null)
-            {
-                return new PathResult { Error = "ACO: Nessun percorso trovato." };
-            }
-
-            return bestPathSoFar;
-        }
-
-        // Metodo helper per costruire il percorso di una singola formica
-        private PathResult BuildPathForAnt(GraphData graph, string startNodeId, string endNodeId,
-            Dictionary<(string, string), double> pheromones, double alpha, double beta, Random random)
-        {
-            var path = new List<string> { startNodeId };
-            var visited = new HashSet<string> { startNodeId };
-            var current = startNodeId;
-            double totalCost = 0;
-
-            while (current != endNodeId)
-            {
-                var possibleMoves = graph.Links.Where(l => l.From == current && !visited.Contains(l.To)).ToList();
-                if (!possibleMoves.Any()) return new PathResult(); // Sackgasse
-
-                var moveProbabilities = new Dictionary<string, double>();
-                double totalProbability = 0;
-
-                foreach (var move in possibleMoves)
-                {
-                    double pheromoneLevel = pheromones[(move.From, move.To)];
-                    double heuristicValue = 1.0 / move.Weight; // L'euristica è l'inverso del costo
-
-                    double probability = Math.Pow(pheromoneLevel, alpha) * Math.Pow(heuristicValue, beta);
-                    moveProbabilities[move.To] = probability;
-                    totalProbability += probability;
-                }
-
-                // Scelta probabilistica della mossa successiva
-                double randomValue = random.NextDouble() * totalProbability;
-                string nextNode = "";
-                foreach (var move in moveProbabilities)
-                {
-                    randomValue -= move.Value;
-                    if (randomValue <= 0)
-                    {
-                        nextNode = move.Key;
-                        break;
-                    }
-                }
-
-                // Aggiorna stato formica
-                var linkTaken = possibleMoves.First(l => l.To == nextNode);
-                totalCost += linkTaken.Weight;
-                visited.Add(nextNode);
-                path.Add(nextNode);
-                current = nextNode;
-            }
-
-            return new PathResult { Path = path, TotalCost = totalCost };
+            _timer?.Dispose();
         }
     }
 }
