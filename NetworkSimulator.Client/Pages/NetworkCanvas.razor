@@ -303,6 +303,13 @@
     private async Task AddNewNode()
     {
         var typeAsString = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Tipo di nodo? (Sensor, Gateway, Router, Internet)", "Sensor");
+        
+        // Se l'utente ha premuto "Annulla", typeAsString sarà nullo. Interrompiamo l'operazione.
+        if (typeAsString == null)
+        {
+            return;
+        }
+        
         Enum.TryParse(typeof(NodeType), typeAsString, true, out var nodeTypeObj);
         NodeType nodeType = (NodeType)(nodeTypeObj ?? NodeType.Sensor);
         var newNode = new Node { Id = nodeCounter.ToString(), Label = $"{nodeType} {nodeCounter}", Type = nodeType };
@@ -416,6 +423,7 @@
         if (nodeToUpdate == null) return;
 
         var newLabel = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Modifica etichetta:", nodeToUpdate.Label);
+        if (newLabel == null) return;
         nodeToUpdate.Label = newLabel;
 
         if (nodeToUpdate.Type == NodeType.Sensor)
@@ -446,6 +454,7 @@
 
         // 1. Riceviamo l'input come STRINGA per evitare errori di conversione immediati.
         var latencyAsString = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Modifica la latenza (ms)", linkToUpdate.Latency.ToString(CultureInfo.InvariantCulture));
+        if (latencyAsString == null) return;
 
         // 2. Convertiamo la stringa in un numero in modo sicuro. Se l'input non è valido, manteniamo il vecchio valore.
         if (!double.TryParse(latencyAsString, NumberStyles.Any, CultureInfo.InvariantCulture, out double newLatency))
@@ -455,6 +464,8 @@
 
         // 3. Ora che il primo input è stato gestito, procediamo con il secondo.
         var bandwidthAsString = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Modifica la banda (Mbps)", linkToUpdate.Bandwidth.ToString(CultureInfo.InvariantCulture));
+        if (bandwidthAsString == null) return;
+        
         if (!double.TryParse(bandwidthAsString, NumberStyles.Any, CultureInfo.InvariantCulture, out double newBandwidth))
         {
             newBandwidth = linkToUpdate.Bandwidth; // Mantiene il valore originale in caso di errore

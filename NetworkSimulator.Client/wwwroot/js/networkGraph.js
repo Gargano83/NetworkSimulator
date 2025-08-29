@@ -200,8 +200,7 @@ window.networkGraph = {
     removeLink: function (linkId) { edges.remove({ id: linkId }); },
     promptForValue: function (message, defaultValue) {
         const value = prompt(message, defaultValue);
-        // Se l'utente preme "Annulla", il prompt restituisce null. In questo caso, restituiamo il valore di default.
-        return value === null ? defaultValue : value;
+        return value;
     },
 
     // Funzioni per la visualizzazione dei risultati (invariate)
