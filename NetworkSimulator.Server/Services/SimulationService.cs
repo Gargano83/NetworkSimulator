@@ -11,7 +11,7 @@ namespace NetworkSimulator.Server.Services
     public class SimulationService : IDisposable
     {
         private readonly IHubContext<SimulationHub> _hubContext;
-        private readonly RoutingAgent _routingAgent;
+        private readonly MlNetRoutingAgent _routingAgent;
         private Timer? _timer;
         private GraphData? _networkGraph;
         private List<DataPacket> _packets = new List<DataPacket>();
@@ -29,7 +29,7 @@ namespace NetworkSimulator.Server.Services
         /// <summary>
         /// Costruttore che riceve il contesto dell'Hub SignalR per poter comunicare con i client.
         /// </summary>
-        public SimulationService(IHubContext<SimulationHub> hubContext, RoutingAgent routingAgent)
+        public SimulationService(IHubContext<SimulationHub> hubContext, MlNetRoutingAgent routingAgent)
         {
             _hubContext = hubContext;
             _routingAgent = routingAgent;
@@ -198,6 +198,7 @@ namespace NetworkSimulator.Server.Services
                 // 1. DECISIONE DI ROUTING (RISPETTA LA SCELTA DELL'UTENTE)
                 if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
                 {
+                    // --- MODIFICA #3: Chiama il nuovo agente ---
                     nextHop = _routingAgent.ChooseNextHop(_networkGraph, packet.CurrentLocationId, packet.DestinationId);
                 }
                 else // Default: usa Dijkstra
@@ -218,7 +219,9 @@ namespace NetworkSimulator.Server.Services
                     {
                         if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
                         {
-                            _routingAgent.UpdateQValue(_networkGraph, packet.CurrentLocationId, nextHop, packet.DestinationId, linkTaken);
+                            // --- MODIFICA #4: Calcola la ricompensa e aggiorna il modello ---
+                            double reward = 100.0 / linkTaken.Latency;
+                            _routingAgent.UpdateModel(packet.CurrentLocationId, nextHop, packet.DestinationId, reward);
                         }
 
                         packet.FullPath.Add(nextHop);

@@ -34,7 +34,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddSingleton<SimulationService>();
-builder.Services.AddSingleton<RoutingAgent>();
+builder.Services.AddSingleton<MlNetRoutingAgent>();
 
 var app = builder.Build();
 
