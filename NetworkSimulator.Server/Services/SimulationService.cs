@@ -187,11 +187,23 @@ namespace NetworkSimulator.Server.Services
             }
             _packets.RemoveAll(p => p.CurrentLocationId == p.DestinationId);
 
+            var lostPackets = _packets.Where(p => p.Ttl <= 0).ToList();
+            if (lostPackets.Any())
+            {
+                // Notifica al log che dei pacchetti sono stati persi
+                _hubContext.Clients.All.SendAsync("LogEvent", $"[{_simulationTime}s] {lostPackets.Count} pacchetti persi (TTL scaduto).");
+                // Rimuovi i pacchetti scaduti dalla simulazione
+                _packets.RemoveAll(p => p.Ttl <= 0);
+            }
+
             bool hasPanelBeenUpdatedThisTick = false;
 
             foreach (var packet in _packets)
             {
                 if (_networkGraph == null || packet.FullPath == null) continue;
+
+                // Ad ogni tick, il "tempo di vita" di ogni pacchetto diminuisce.
+                packet.Ttl--;
 
                 string nextHop = packet.CurrentLocationId;
 
@@ -209,6 +221,12 @@ namespace NetworkSimulator.Server.Services
                     {
                         nextHop = pathResult.Path[1];
                     }
+                }
+
+                // Se il pacchetto non ha trovato una via d'uscita, lo notifichiamo nel log
+                if (nextHop == packet.CurrentLocationId && packet.CurrentLocationId != packet.DestinationId)
+                {
+                    _hubContext.Clients.All.SendAsync("LogEvent", $"[{_simulationTime}s] Pacchetto {packet.Id.ToString().Substring(0, 8)} bloccato in {packet.CurrentLocationId}.");
                 }
 
                 // 2. MOVIMENTO E AGGIORNAMENTO STATO PACCHETTO

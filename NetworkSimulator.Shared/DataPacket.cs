@@ -51,5 +51,9 @@
         /// Utile per calcolare la latenza totale di consegna.
         /// </summary>
         public int CreationTime { get; set; }
+        /// <summary>
+        /// Time-To-Live: un contatore per rimuovere i pacchetti bloccati.
+        /// </summary>
+        public int Ttl { get; set; } = 15; // Un pacchetto "vive" per 15 tick (secondi)
     }
 }
