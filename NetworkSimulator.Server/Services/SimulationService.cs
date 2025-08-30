@@ -64,10 +64,19 @@ namespace NetworkSimulator.Server.Services
             if (!IsRunning || _networkGraph == null) return;
             _simulationTime++;
             Console.WriteLine($"--- Simulation Tick: {_simulationTime}s ---");
+
             UpdateNetworkConditions();
             GenerateTraffic();
             RouteAndMovePackets();
             BroadcastState();
+
+            // Ogni 5 secondi, calcola e invia le statistiche attuali.
+            if (_simulationTime % 5 == 0)
+            {
+                var currentStats = GetSimulationStats();
+                // Invia le statistiche al client tramite un nuovo messaggio SignalR
+                _hubContext.Clients.All.SendAsync("UpdateLiveStats", _simulationTime, currentStats);
+            }
         }
 
         /// <summary>

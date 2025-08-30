@@ -94,7 +94,8 @@
                                                               OnItemDeleted="HandleItemDelete" />
 
         <div class="row mt-3">
-            <div class="col-12"> <EventLog LogMessages="eventLogMessages" /> </div>
+            <div class="col-12"> <EventLog LogMessages="eventLogMessages" Title="Log Eventi Principali" /> </div>
+            <div class="col-12"> <EventLog LogMessages="liveStatsMessages" Title="Statistiche in Tempo Reale" /> </div>
             <div class="col-12 mt-3"> <Dashboard Stats="simulationStats" /> </div>
         </div>
     </div>
@@ -126,6 +127,8 @@
 
     private List<string> eventLogMessages = new List<string>();
     private SimulationStats? simulationStats;
+
+    private List<string> liveStatsMessages = new List<string>();
 
     /// <summary>
     /// All'avvio del componente, inizializza la connessione SignalR.
@@ -159,6 +162,19 @@
             eventLogMessages.Insert(0, message); // Aggiunge il nuovo messaggio in cima alla lista
             if (eventLogMessages.Count > 50) eventLogMessages.RemoveAt(50); // Limita la dimensione del log
             StateHasChanged();
+        });
+
+        // Si mette in ascolto del nuovo messaggio per le statistiche parziali.
+        hubConnection.On<int, SimulationStats>("UpdateLiveStats", (time, stats) =>
+        {
+            // Invece di scrivere in console, formatta il messaggio e aggiungilo alla lista
+            string statsMessage = $"T={time}s | Pkts: {stats.PacketsDelivered}/{stats.PacketsGenerated} | Latency: {stats.AverageLatency:F2}s";
+            liveStatsMessages.Insert(0, statsMessage); // Aggiunge in cima
+
+            // Limita la dimensione del log per non appesantire la pagina
+            if (liveStatsMessages.Count > 50) liveStatsMessages.RemoveAt(50);
+
+            StateHasChanged(); // Aggiorna la UI
         });
 
         await hubConnection.StartAsync();
@@ -250,6 +266,7 @@
         latestPathResult = null;
         simulationStats = null;     // Pulisce la dashboard precedente
         eventLogMessages.Clear();   // Pulisce il log precedente
+        liveStatsMessages.Clear();
         isBusy = true;
         simulationStatusMessage = "Avvio della simulazione in corso...";
         var graphData = new GraphData { Nodes = nodes, Links = links };
