@@ -160,7 +160,7 @@
         hubConnection.On<string>("LogEvent", (message) =>
         {
             eventLogMessages.Insert(0, message); // Aggiunge il nuovo messaggio in cima alla lista
-            if (eventLogMessages.Count > 50) eventLogMessages.RemoveAt(50); // Limita la dimensione del log
+            if (eventLogMessages.Count > 200) eventLogMessages.RemoveAt(200); // Limita la dimensione del log
             StateHasChanged();
         });
 
