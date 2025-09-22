@@ -49,49 +49,49 @@
       "id": "L2",
       "from": "2",
       "to": "3",
-      "technology": "Wired"
+      "technology": "CoreNwk"
     },
     {
       "id": "L3",
       "from": "2",
       "to": "6",
-      "technology": "Satellite"
+      "technology": "SatelliteLEO"
     },
     {
       "id": "L4",
       "from": "3",
       "to": "4",
-      "technology": "Wired"
+      "technology": "CoreNwk"
     },
     {
       "id": "L5",
       "from": "3",
       "to": "6",
-      "technology": "Wired"
+      "technology": "CoreNwk"
     },
     {
       "id": "L6",
       "from": "4",
       "to": "5",
-      "technology": "Wired"
+      "technology": "CoreNwk"
     },
     {
       "id": "L7",
       "from": "5",
       "to": "7",
-      "technology": "Wired"
+      "technology": "CoreNwk"
     },
     {
       "id": "L8",
       "from": "6",
       "to": "7",
-      "technology": "Wired"
+      "technology": "CoreNwk"
     },
     {
       "id": "L9",
       "from": "4",
       "to": "6",
-      "technology": "WiFi"
+      "technology": "CoreNwk"
     }
   ]
 }

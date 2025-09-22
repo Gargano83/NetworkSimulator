@@ -29,11 +29,15 @@
     public enum LinkTechnology
     {
         /// <summary>
-        /// Collegamento fisico ad alta velocità e stabilità (es. Fibra, Ethernet).
+        /// Connessione cablata in fibra ottica, caratterizzata da bassissima latenza e alta banda.
         /// </summary>
-        Wired,
+        Fiber,
         /// <summary>
-        /// Tecnologia wireless a corto-medio raggio, alta banda.
+        /// Connessione cablata su doppino telefonico (rame), con performance inferiori alla fibra.
+        /// </summary>
+        DSL,
+        /// <summary>
+        /// Tecnologia wireless a corto-medio raggio, tipica delle reti locali (LAN).
         /// </summary>
         WiFi,
         /// <summary>
@@ -45,8 +49,16 @@
         /// </summary>
         LoRa,
         /// <summary>
-        /// Collegamento via satellite, caratterizzato da alta latenza ma copertura globale.
+        /// Collegamento via satelliti in orbita bassa (Low Earth Orbit), con latenza ridotta (es. Starlink).
         /// </summary>
-        Satellite
+        SatelliteLEO,
+        /// <summary>
+        /// Collegamento via satelliti in orbita geostazionaria, caratterizzato da altissima latenza.
+        /// </summary>
+        SatelliteGEO,
+        /// <summary>
+        /// Rappresenta un collegamento ad alte prestazioni all'interno di una dorsale di rete (Core Network).
+        /// </summary>
+        CoreNwk
     }
 }

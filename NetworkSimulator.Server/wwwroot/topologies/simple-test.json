@@ -2,13 +2,18 @@
   "nodes": [
     {
       "id": "1",
-      "label": "Sensor 1",
+      "label": "Sensor",
       "type": "Sensor",
-      "dataRate": 10,
-      "packetSize": 5
+      "dataRate": 2,
+      "packetSize": 1
     },
     {
       "id": "2",
+      "label": "Gateway",
+      "type": "Gateway"
+    },
+    {
+      "id": "3",
       "label": "Internet",
       "type": "Internet"
     }
@@ -18,7 +23,13 @@
       "id": "L1",
       "from": "1",
       "to": "2",
-      "technology": "WiFi"
+      "technology": "LoRa"
+    },
+    {
+      "id": "L2",
+      "from": "2",
+      "to": "3",
+      "technology": "Fiber"
     }
   ]
 }
