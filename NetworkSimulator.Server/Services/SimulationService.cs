@@ -68,6 +68,7 @@ namespace NetworkSimulator.Server.Services
             UpdateNetworkConditions();
             GenerateTraffic();
             RouteAndMovePackets();
+            UpdateResultsPanel();
             BroadcastState();
 
             // Ogni 5 secondi, calcola e invia le statistiche attuali.
@@ -174,6 +175,40 @@ namespace NetworkSimulator.Server.Services
         }
 
         /// <summary>
+        /// Calcola il percorso ottimale per ogni sensore attivo e invia un riepilogo al frontend.
+        /// </summary>
+        private void UpdateResultsPanel()
+        {
+            if (_networkGraph == null) return;
+
+            // Trova dinamicamente il nodo di destinazione "Internet"
+            var internetNode = _networkGraph.Nodes.FirstOrDefault(n => n.Type == NodeType.Internet);
+            if (internetNode == null) return; // Se non c'è destinazione, non fare nulla
+
+            // Identifica quali sensori hanno pacchetti attualmente in transito
+            var activeSensorIds = _packets.Select(p => p.SourceId).Distinct().ToList();
+            var allFlowResults = new List<FlowResult>();
+
+            foreach (var sensorId in activeSensorIds)
+            {
+                // Per ogni sensore attivo, calcola il suo percorso ottimale attuale
+                var pathResult = CalculateDijkstraPath(_networkGraph, sensorId, internetNode.Id, _activeMetric);
+                if (pathResult.Path != null)
+                {
+                    allFlowResults.Add(new FlowResult
+                    {
+                        SourceId = sensorId,
+                        Path = pathResult.Path,
+                        TotalCost = pathResult.TotalCost
+                    });
+                }
+            }
+
+            // Invia la lista completa di flussi al frontend tramite un nuovo messaggio SignalR
+            _hubContext.Clients.All.SendAsync("UpdateAllPaths", allFlowResults, _activeRoutingAlgorithm, _activeMetric);
+        }
+
+        /// <summary>
         /// Per ogni pacchetto, decide il prossimo passo, aggiorna lo stato e invia i dati al frontend.
         /// </summary>
         private void RouteAndMovePackets()
@@ -195,8 +230,6 @@ namespace NetworkSimulator.Server.Services
                 // Rimuovi i pacchetti scaduti dalla simulazione
                 _packets.RemoveAll(p => p.Ttl <= 0);
             }
-
-            bool hasPanelBeenUpdatedThisTick = false;
 
             foreach (var packet in _packets)
             {
@@ -248,36 +281,7 @@ namespace NetworkSimulator.Server.Services
                         packet.CurrentLocationId = nextHop;
                     }
                 }
-
-                // --- 3. AGGIORNAMENTO PANNELLO (CORRETTO E SINCRONIZZATO) ---
-                // Aggiorniamo il pannello solo UNA VOLTA per tick, usando il primo pacchetto come riferimento
-                // per evitare sfarfallii e dati incoerenti.
-                if (!hasPanelBeenUpdatedThisTick)
-                {
-                    var pathForDisplay = new PathResult
-                    {
-                        Path = packet.FullPath,
-                        TotalCost = CalculatePathCost(packet.FullPath, _activeMetric)
-                    };
-                    _hubContext.Clients.All.SendAsync("PathCalculated", pathForDisplay, _activeRoutingAlgorithm, _activeMetric);
-                    hasPanelBeenUpdatedThisTick = true;
-                }
             }
-        }
-
-        /// <summary>
-        /// Metodo helper per calcolare il costo totale di un percorso dato.
-        /// </summary>
-        private double CalculatePathCost(List<string> path, string metric)
-        {
-            double totalCost = 0;
-            if (_networkGraph == null || path.Count < 2) return 0;
-            for (int i = 0; i < path.Count - 1; i++)
-            {
-                var link = _networkGraph.Links.FirstOrDefault(l => l.From == path[i] && l.To == path[i + 1]);
-                if (link != null) totalCost += GetMetricValue(link, metric);
-            }
-            return totalCost;
         }
 
         /// <summary>

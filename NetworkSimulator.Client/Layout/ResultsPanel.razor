@@ -14,29 +14,38 @@
             <span class="text-capitalize">@Metric</span>
         </p>
         <hr />
-        @if (Result != null && Result.Error == null && Result.Path != null)
+        @if (FlowResults != null && FlowResults.Any())
         {
-            <p class="card-text mb-1">
-                <strong>Percorso Scelto:</strong>
-                <code>@GetPathWithLabels()</code>
-            </p>
-            <p class="card-text mb-1">
-                <strong>Costo Totale:</strong>
-                <span class="fw-bold text-success">@Result.TotalCost.ToString("F2")</span>
-            </p>
+            <table class="table table-sm table-borderless small">
+                <thead>
+                    <tr>
+                        <th>Sorgente</th>
+                        <th>Percorso Scelto (@Metric)</th>
+                        <th class="text-end">Costo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var flow in FlowResults)
+                    {
+                        <tr>
+                            <td>@GetNodeLabel(flow.SourceId)</td>
+                            <td><code>@GetPathWithLabels(flow.Path)</code></td>
+                            <td class="text-end fw-bold text-success">@flow.TotalCost.ToString("F2")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
         }
-        else if (Result != null)
+        else
         {
-            <p class="card-text mb-1 text-danger">
-                <strong>Errore:</strong> @Result.Error
-            </p>
+            <p class="text-muted">Nessun flusso di dati attivo.</p>
         }
     </div>
 </div>
 
 @code {
     [Parameter]
-    public PathResult? Result { get; set; }
+    public List<FlowResult> FlowResults { get; set; } = new List<FlowResult>();
 
     [Parameter]
     public string AlgorithmName { get; set; } = "N/D";
@@ -50,21 +59,6 @@
     [Parameter]
     public List<Node> AllNodes { get; set; } = new List<Node>();
 
-    /// <summary>
-    /// NUOVO: Metodo helper per tradurre la lista di ID in una stringa di etichette.
-    /// </summary>
-    private string GetPathWithLabels()
-    {
-        if (Result?.Path == null || !AllNodes.Any())
-        {
-            return "N/D";
-        }
-
-        // Per ogni ID nel percorso, trova il nodo corrispondente e prendi la sua etichetta.
-        var labels = Result.Path.Select(nodeId =>
-            AllNodes.FirstOrDefault(node => node.Id == nodeId)?.Label ?? nodeId
-        );
-
-        return string.Join(" → ", labels);
-    }
+    private string GetNodeLabel(string nodeId) => AllNodes.FirstOrDefault(n => n.Id == nodeId)?.Label ?? nodeId;
+    private string GetPathWithLabels(List<string> path) => path == null ? "N/A" : string.Join(" → ", path.Select(GetNodeLabel));
 }

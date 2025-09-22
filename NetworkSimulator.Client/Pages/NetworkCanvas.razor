@@ -78,9 +78,9 @@
             </div>
         </div>
 
-        @if (isSimulationRunning && latestPathResult != null)
+        @if (isSimulationRunning && latestFlowResults.Any())
         {
-            <ResultsPanel Result="latestPathResult"
+            <ResultsPanel FlowResults="latestFlowResults"
                           AlgorithmName="@latestAlgorithmUsed"
                           Metric="@latestMetricUsed"
                           AllNodes="nodes" />
@@ -118,7 +118,7 @@
 
     private string selectedTopologyFile = "";
 
-    private PathResult? latestPathResult;
+    private List<FlowResult> latestFlowResults = new List<FlowResult>();
     private string latestAlgorithmUsed = "";
     private string latestMetricUsed = "";
 
@@ -150,9 +150,9 @@
             StateHasChanged();
         });
 
-        hubConnection.On<PathResult, string, string>("PathCalculated", (result, algorithm, metric) =>
+        hubConnection.On<List<FlowResult>, string, string>("UpdateAllPaths", (results, algorithm, metric) =>
         {
-            latestPathResult = result;
+            latestFlowResults = results;
             latestAlgorithmUsed = algorithm;
             latestMetricUsed = metric;
             StateHasChanged();
@@ -265,7 +265,7 @@
     /// </summary>
     private async Task StartSimulation()
     {
-        latestPathResult = null;
+        latestFlowResults.Clear();
         simulationStats = null;     // Pulisce la dashboard precedente
         eventLogMessages.Clear();   // Pulisce il log precedente
         liveStatsMessages.Clear();
@@ -299,7 +299,7 @@
         {
             isSimulationRunning = false;
             simulationStatusMessage = "Simulazione fermata.";
-            latestPathResult = null;
+            latestFlowResults.Clear();
             simulationStats = await Http.GetFromJsonAsync<SimulationStats>("api/simulation/stats");
             await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlights");
         }

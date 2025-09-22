@@ -26,7 +26,7 @@ builder.Services.AddCors(options =>
     {
         // Sostituire "http://localhost:5129" con l'URL e la porta esatti del progetto Blazor Client.
         // Si trovano nel file launchSettings.json del progetto Client.
-        policy.WithOrigins("https://localhost:7105", "http://localhost:5161")
+        policy.WithOrigins("https://localhost:44309", "http://localhost:53064")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials(); // Necessario per SignalR con autenticazione/sessioni.
