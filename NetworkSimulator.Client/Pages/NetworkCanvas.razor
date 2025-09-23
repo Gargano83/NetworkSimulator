@@ -11,8 +11,115 @@
 @inject HttpClient Http
 @implements IAsyncDisposable
 
-<div class="row">
-    <div class="col-md-8">
+<div class="container-fluid">
+    <h3 class="mb-3">Simulatore di Rete Dinamica</h3>
+
+    <!-- Riga 1: Controlli Principali -->
+    <div class="row g-3 mb-3">
+        <!-- Colonna 1: Carica Topologia -->
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title fw-bold">Carica Topologia Predefinita</h6>
+                    <div class="input-group">
+                        <select class="form-select" @bind="selectedTopologyFile">
+                            <option value="" disabled selected>Seleziona una topologia...</option>
+                            <option value="topologies/simple-test.json">Test Semplice</option>
+                            <option value="topologies/europe-backbone.json">Dorsale Europea</option>
+                            <option value="topologies/hub-spoke-iot.json">Rete IoT Hub-and-Spoke</option>
+                            <option value="topologies/us-peering.json">Dorsale ISP (USA)</option>
+                        </select>
+                        <button class="btn btn-outline-secondary" @onclick="LoadTopology">Carica</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Colonna 2: Controllo Simulazione -->
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title fw-bold">Controllo Simulazione</h6>
+                    <div class="d-flex align-items-center flex-wrap gap-3">
+                        <div class="d-flex flex-column">
+                            <label>&nbsp;</label>
+                            @if (isSimulationRunning)
+                            {
+                                <button class="btn btn-danger btn-sm" @onclick="StopSimulation" disabled="@isBusy">Ferma Simulazione</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-success btn-sm" @onclick="StartSimulation" disabled="@isBusy">Avvia Simulazione</button>
+                            }
+                        </div>
+
+                        <div class="ms-auto d-flex flex-column">
+                            <label for="routing" class="form-label mb-1 small">Algoritmo di Routing:</label>
+                            <select id="routing" class="form-select form-select-sm" @bind="selectedRoutingAlgorithm" disabled="@isSimulationRunning">
+                                <option value="Dijkstra">Dijkstra</option>
+                                <option value="AI">AI (Q-Learning)</option>
+                            </select>
+                        </div>
+
+                        <div class="d-flex flex-column">
+                            <label for="metric" class="form-label mb-1 small">Ottimizza per:</label>
+                            <select id="metric" class="form-select form-select-sm" @bind="selectedMetric" disabled="@isSimulationRunning">
+                                <option value="latency">Latenza</option>
+                                <option value="bandwidth">Banda</option>
+                                <option value="reliability">Affidabilità</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(simulationStatusMessage))
+                    {
+                        <div class="text-muted small mt-3">@simulationStatusMessage</div>
+                    }
+                </div>
+            </div>
+        </div>
+        <!-- Colonna 3: Proprietà Elemento Selezionato -->
+        <div class="col-lg-4">
+            <PropertiesPanel SelectedItem="selectedItem"
+                             OnItemUpdated="HandleItemUpdate"
+                             OnItemDeleted="HandleItemDelete" />
+        </div>
+    </div>
+    <!-- Riga 2: Canvas -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="controls mb-2">
+                <button class="btn btn-primary me-2" @onclick="AddNewNode" disabled="@isSimulationRunning">Aggiungi Nodo</button>
+                <button class="btn btn-success me-2" @onclick="EnterAddLinkMode" disabled="@isSimulationRunning">Aggiungi Collegamento</button>
+            </div>
+            <div id="network-canvas" style="width: 100%; height: 500px; border: 1px solid #dee2e6; background-color: #f8f9fa; border-radius: .375rem;"></div>
+        </div>
+    </div>
+    <!-- Riga 3: Riepilogo Calcolo Percorso -->
+    <div class="row mb-3">
+        <div class="col-12">
+            @if (isSimulationRunning && latestFlowResults.Any())
+            {
+                <ResultsPanel FlowResults="latestFlowResults"
+                              AlgorithmName="@latestAlgorithmUsed"
+                              Metric="@latestMetricUsed"
+                              AllNodes="nodes" />
+            }
+        </div>
+    </div>
+    <!-- Riga 4: Log e Dashboard -->
+    <div class="row g-3">
+        <div class="col-lg-4">
+            <EventLog LogMessages="eventLogMessages" Title="Log Eventi Principali" />
+        </div>
+        <div class="col-lg-4">
+            <EventLog LogMessages="liveStatsMessages" Title="Statistiche in Tempo Reale" />
+        </div>
+        <div class="col-lg-4">
+            <Dashboard Stats="simulationStats" />
+        </div>
+    </div>
+
+    @* <div class="col-md-8">
         <h3>Simulatore di Rete Dinamica</h3>
 
         <div class="card mb-3">
@@ -98,8 +205,8 @@
             <div class="col-12"> <EventLog LogMessages="liveStatsMessages" Title="Statistiche in Tempo Reale" /> </div>
             <div class="col-12 mt-3"> <Dashboard Stats="simulationStats" /> </div>
         </div>
-    </div>
-</div>
+    </div>*@
+</div> 
 
 @code {
     private int nodeCounter = 1;
