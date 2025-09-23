@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="wwwroot\lib\bootstrap\dist\fonts\" />
     <Folder Include="wwwroot\lib\font-awesome\" />
     <Folder Include="wwwroot\lib\vis-network\" />
     <Folder Include="wwwroot\icons\" />

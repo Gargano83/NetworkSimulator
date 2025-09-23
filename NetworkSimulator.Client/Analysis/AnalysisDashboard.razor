@@ -1,0 +1,116 @@
+﻿@using NetworkSimulator.Client.Analysis
+@using NetworkSimulator.Shared
+@using System.Text.Json
+@inject AnalysisStateService AnalysisState
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<hr class="my-4" />
+<h4 class="mb-3">Analisi Casi di Studio</h4>
+<button class="btn btn-secondary btn-sm mb-3" @onclick="ClearResults">Azzera Risultati Analisi</button>
+
+<!-- Caso di Studio 1: Condizioni Normali -->
+<div class="card mb-3">
+    <div class="card-header"><h6>Caso di Studio 1: Condizioni Normali</h6></div>
+    <div class="card-body">
+        <p class="small text-muted">Esegui una simulazione completa per ogni algoritmo per popolare la tabella.</p>
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Metrica</th>
+                    <th>Dijkstra (Baseline)</th>
+                    <th>AI (Q-Learning)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Tasso di consegna (%)</td>
+                    <td>@GetNormalResult("Dijkstra", s => ((double)s.PacketsDelivered / s.PacketsGenerated * 100).ToString("F2") + "%")</td>
+                    <td>@GetNormalResult("AI", s => ((double)s.PacketsDelivered / s.PacketsGenerated * 100).ToString("F2") + "%")</td>
+                </tr>
+                <tr>
+                    <td>Latenza Media (s)</td>
+                    <td>@GetNormalResult("Dijkstra", s => s.AverageLatency.ToString("F2") + " s")</td>
+                    <td>@GetNormalResult("AI", s => s.AverageLatency.ToString("F2") + " s")</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Caso di Studio 2: Guasto di un Link -->
+<div class="card mb-3">
+    <div class="card-header"><h6>Caso di Studio 2: Guasto di un Link (Link Failure)</h6></div>
+    <div class="card-body">
+        <p class="small text-muted">Esegui lo scenario di guasto per ogni algoritmo per popolare il grafico. I dati vengono aggiunti in tempo reale.</p>
+        <canvas id="linkFailureChart"></canvas>
+    </div>
+</div>
+
+<!-- Caso di Studio 3: Congestione -->
+<div class="card">
+    <div class="card-header"><h6>Caso di Studio 3: Congestione</h6></div>
+    <div class="card-body">
+        <p class="small text-muted">Questa sezione è predisposta per future analisi sulla congestione di rete.</p>
+    </div>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Si iscrive all'evento di cambiamento dello stato.
+        AnalysisState.OnChange += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Aggiorna il grafico ogni volta che i dati cambiano
+        await UpdateLinkFailureChart();
+    }
+
+    private async Task UpdateLinkFailureChart()
+    {
+        // Prepara i dati per il grafico, creando una serie per ogni algoritmo
+        var datasets = new List<object>();
+
+        if (AnalysisState.LinkFailureResults.TryGetValue("Dijkstra", out var dijkstraData))
+        {
+            datasets.Add(new
+            {
+                label = "Dijkstra",
+                data = dijkstraData.Select(d => d.DeliveryRate),
+                borderColor = "rgb(54, 162, 235)", // Blu
+                tension = 0.1
+            });
+        }
+
+        if (AnalysisState.LinkFailureResults.TryGetValue("AI", out var aiData))
+        {
+            datasets.Add(new
+            {
+                label = "AI (Q-Learning)",
+                data = aiData.Select(d => d.DeliveryRate),
+                borderColor = "rgb(255, 99, 132)", // Rosso
+                tension = 0.1
+            });
+        }
+
+        // Estrae le etichette del tempo (asse X)
+        var labels = (dijkstraData ?? aiData ?? new List<TimeSeriesDataPoint>()).Select(d => d.Time + "s");
+
+        await JSRuntime.InvokeVoidAsync("chartInterop.createOrUpdateChart", "linkFailureChart", labels, datasets);
+    }
+
+    // Metodo per recuperare in modo sicuro i dati per la tabella
+    private string GetNormalResult(string key, Func<SimulationStats, string> format)
+    {
+        return AnalysisState.NormalConditionResults.TryGetValue(key, out var stats) ? format(stats) : "N/D";
+    }
+
+    private void ClearResults() => AnalysisState.Clear();
+
+    public void Dispose()
+    {
+        AnalysisState.OnChange -= StateHasChanged;
+    }
+}

@@ -25,7 +25,9 @@ window.networkGraph = {
         let options = {
             interaction: {
                 dragNodes: true,
-                hover: true // Abilita l'evidenziazione al passaggio del mouse
+                dragView: true,     // Permette di trascinare il canvas
+                hover: true,        // Abilita l'evidenziazione al passaggio del mouse
+                zoomView: false
             },
             physics: {
                 // Usiamo il solver "barnesHut" che ci dà più controllo sulla spaziatura
@@ -213,6 +215,20 @@ window.networkGraph = {
             if (connectedEdges.length > 0) {
                 edges.update({ id: connectedEdges[0].id, color: { color: highlightColor }, width: 3 });
             }
+        }
+    },
+    zoomIn: function () {
+        if (network) {
+            network.moveTo({
+                scale: network.getScale() * 1.2 // Aumenta lo zoom del 20%
+            });
+        }
+    },
+    zoomOut: function () {
+        if (network) {
+            network.moveTo({
+                scale: network.getScale() / 1.2 // Diminuisce lo zoom del 20%
+            });
         }
     }
 };
