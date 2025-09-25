@@ -149,7 +149,7 @@
 
     <div class="tab-pane fade" id="analysis-tab-pane" role="tabpanel" aria-labelledby="analysis-tab" tabindex="0">
         <div class="pt-3">
-            <AnalysisDashboard />
+            <AnalysisDashboard AllNodes="nodes" />
         </div>
     </div>
 </div> 
@@ -219,18 +219,20 @@
         });
 
         // Si mette in ascolto del nuovo messaggio per le statistiche parziali.
-        hubConnection.On<int, SimulationStats>("UpdateLiveStats", (time, stats) =>
+        hubConnection.On<int, List<LiveFlowStats>>("UpdateLiveStats", (time, statsList) =>
         {
-            // Invece di scrivere in console, formatta il messaggio e aggiungilo alla lista
-            string statsMessage = $"T={time}s | Pkts: {stats.PacketsDelivered}/{stats.PacketsGenerated} | Latency: {stats.AverageLatency:F2}s";
-            liveStatsMessages.Insert(0, statsMessage); // Aggiunge in cima
-
-            // Limita la dimensione del log per non appesantire la pagina
+            // Formatta i messaggi per il pannello "Statistiche in Tempo Reale" (aggregati)
+            int totalGenerated = statsList.Sum(s => s.PacketsGenerated);
+            int totalDelivered = statsList.Sum(s => s.PacketsDelivered);
+            double deliveryRate = totalGenerated > 0 ? ((double)totalDelivered / totalGenerated) * 100 : 0;
+            string statsMessage = $"T={time}s | Pkts: {totalDelivered}/{totalGenerated} | Delivery: {deliveryRate:F2}%";
+            liveStatsMessages.Insert(0, statsMessage);
             if (liveStatsMessages.Count > 50) liveStatsMessages.RemoveAt(50);
 
-            StateHasChanged(); // Aggiorna la UI
+            // Invia i dati dettagliati al servizio di analisi per il grafico
+            AnalysisState.AddLinkFailureFlowDataPoints(selectedRoutingAlgorithm, time, statsList);
 
-            AnalysisState.AddLinkFailureDataPoint(selectedRoutingAlgorithm, time, stats);
+            StateHasChanged();
         });
 
         await hubConnection.StartAsync();
@@ -326,6 +328,19 @@
         liveStatsMessages.Clear();
         isBusy = true;
         simulationStatusMessage = "Avvio della simulazione in corso...";
+
+        // Pulisce i dati di analisi relativi al tipo di simulazione che sta per partire
+        if (selectedRoutingAlgorithm == "Dijkstra")
+        {
+            AnalysisState.NormalConditionFlowResults.Remove("Dijkstra");
+            AnalysisState.LinkFailureFlowResults.Remove("Dijkstra");
+        }
+        else
+        {
+            AnalysisState.NormalConditionFlowResults.Remove("AI");
+            AnalysisState.LinkFailureFlowResults.Remove("AI");
+        }
+
         var graphData = new GraphData { Nodes = nodes, Links = links };
         var response = await Http.PostAsJsonAsync($"api/simulation/start?routingAlgorithm={selectedRoutingAlgorithm}&metric={selectedMetric}", graphData);
 
@@ -338,16 +353,6 @@
         {
             isSimulationRunning = false;
             simulationStatusMessage = $"Errore avvio simulazione: {await response.Content.ReadAsStringAsync()}";
-        }
-
-        // Pulisce i dati di analisi relativi al tipo di simulazione che sta per partire
-        if (selectedRoutingAlgorithm == "Dijkstra")
-        {
-            AnalysisState.LinkFailureResults.Remove("Dijkstra");
-        }
-        else
-        {
-            AnalysisState.LinkFailureResults.Remove("AI");
         }
 
         isBusy = false;
@@ -366,9 +371,21 @@
             isSimulationRunning = false;
             simulationStatusMessage = "Simulazione fermata.";
             latestFlowResults.Clear();
-            simulationStats = await Http.GetFromJsonAsync<SimulationStats>("api/simulation/stats");
+            var flowStats = await Http.GetFromJsonAsync<List<FlowStats>>("api/simulation/stats");
+
+            if (flowStats != null)
+            {
+                AnalysisState.AddNormalConditionFlowResults(selectedRoutingAlgorithm, flowStats);
+
+                simulationStats = new SimulationStats
+                {
+                    PacketsGenerated = flowStats.Sum(f => f.PacketsGenerated),
+                    PacketsDelivered = flowStats.Sum(f => f.PacketsDelivered),
+                    AverageLatency = flowStats.Where(f => f.PacketsDelivered > 0).DefaultIfEmpty().Average(f => f?.AverageLatency ?? 0)
+                };
+            }
+
             await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlights");
-            AnalysisState.AddNormalConditionResult(selectedRoutingAlgorithm, simulationStats);
         }
         else
         {

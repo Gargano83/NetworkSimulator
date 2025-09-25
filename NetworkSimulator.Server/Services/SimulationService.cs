@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.SignalR;
 using NetworkSimulator.Server.Hubs;
 using NetworkSimulator.Shared;
+using System.Collections.Concurrent;
 
 namespace NetworkSimulator.Server.Services
 {
@@ -21,10 +22,7 @@ namespace NetworkSimulator.Server.Services
         private string _activeMetric = "latency";
         private string _activeRoutingAlgorithm = "Dijkstra";
 
-        private int _packetsGenerated = 0;
-        private int _packetsDelivered = 0;
-        private double _totalLatencySum = 0;
-        private DateTime _simulationStartTime;
+        private ConcurrentDictionary<string, FlowStats> _flowStats;
 
         /// <summary>
         /// Costruttore che riceve il contesto dell'Hub SignalR per poter comunicare con i client.
@@ -33,6 +31,7 @@ namespace NetworkSimulator.Server.Services
         {
             _hubContext = hubContext;
             _routingAgent = routingAgent;
+            _flowStats = new ConcurrentDictionary<string, FlowStats>();
         }
 
         public void StartSimulation(GraphData graph, string routingAlgorithm, string metric)
@@ -45,10 +44,7 @@ namespace NetworkSimulator.Server.Services
             _timer = new Timer(SimulationStep, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
             _activeMetric = metric;
             _activeRoutingAlgorithm = routingAlgorithm;
-            _packetsGenerated = 0;
-            _packetsDelivered = 0;
-            _totalLatencySum = 0;
-            _simulationStartTime = DateTime.UtcNow;
+            _flowStats.Clear();
             Console.WriteLine("Simulazione avviata.");
         }
 
@@ -71,13 +67,31 @@ namespace NetworkSimulator.Server.Services
             UpdateResultsPanel();
             BroadcastState();
 
-            // Ogni 5 secondi, calcola e invia le statistiche attuali.
-            if (_simulationTime % 5 == 0)
+            // Ogni 5 secondi, calcola e invia le statistiche per-flusso attuali
+            if (_simulationTime > 0 && _simulationTime % 5 == 0)
             {
-                var currentStats = GetSimulationStats();
-                // Invia le statistiche al client tramite un nuovo messaggio SignalR
-                _hubContext.Clients.All.SendAsync("UpdateLiveStats", _simulationTime, currentStats);
+                var livePerFlowStats = _flowStats.Values.Select(f => new LiveFlowStats
+                {
+                    SourceNodeId = f.SourceNodeId,
+                    PacketsGenerated = f.PacketsGenerated,
+                    PacketsDelivered = f.PacketsDelivered
+                }).ToList();
+
+                var currentGlobalStats = GetAggregatedStats();
+                // Invia la lista di statistiche al client tramite SignalR
+                _hubContext.Clients.All.SendAsync("UpdateLiveStats", _simulationTime, livePerFlowStats);
             }
+        }
+
+        /// <summary>
+        /// Nuovo metodo per restituire le statistiche per-flusso
+        /// </summary>
+        /// <returns></returns>
+        public List<FlowStats> GetPerFlowStats()
+        {
+            // Ora il metodo deve solo restituire i dati raccolti,
+            // perché il FinalPath è già stato salvato durante la simulazione.
+            return _flowStats.Values.ToList();
         }
 
         /// <summary>
@@ -123,20 +137,19 @@ namespace NetworkSimulator.Server.Services
         }
 
         /// <summary>
-        /// NUOVO: Metodo che calcola e restituisce le statistiche finali.
+        /// Metodo che calcola e restituisce le statistiche live, calcolandole dai dati per-flusso
         /// </summary>
-        public SimulationStats GetSimulationStats()
+        public SimulationStats GetAggregatedStats()
         {
-            var elapsedSeconds = (DateTime.UtcNow - _simulationStartTime).TotalSeconds;
-            if (elapsedSeconds < 1) elapsedSeconds = 1;
+            var totalGenerated = _flowStats.Values.Sum(f => f.PacketsGenerated);
+            var totalDelivered = _flowStats.Values.Sum(f => f.PacketsDelivered);
+            var totalLatency = _flowStats.Values.Sum(f => f.TotalLatencySum);
 
             return new SimulationStats
             {
-                PacketsGenerated = _packetsGenerated,
-                PacketsDelivered = _packetsDelivered,
-                AverageLatency = _packetsDelivered > 0 ? _totalLatencySum / _packetsDelivered : 0,
-                // Throughput calcolato come totale dei pacchetti arrivati diviso il tempo
-                Throughput = _packets.Sum(p => p.Size) / elapsedSeconds
+                PacketsGenerated = totalGenerated,
+                PacketsDelivered = totalDelivered,
+                AverageLatency = totalDelivered > 0 ? totalLatency / totalDelivered : 0,
             };
         }
 
@@ -167,7 +180,9 @@ namespace NetworkSimulator.Server.Services
                     };
 
                     _packets.Add(newPacket);
-                    _packetsGenerated++;
+                    // Aggiorna il contatore per il flusso specifico
+                    var stats = _flowStats.GetOrAdd(sensor.Id, new FlowStats { SourceNodeId = sensor.Id, DestinationNodeId = internetNode.Id });
+                    stats.PacketsGenerated++;
                     // Invia un log eventi in tempo reale
                     _hubContext.Clients.All.SendAsync("LogEvent", $"[{_simulationTime}s] Pacchetto generato da {newPacket.SourceId}");
                 }
@@ -217,8 +232,13 @@ namespace NetworkSimulator.Server.Services
             var deliveredPackets = _packets.Where(p => p.CurrentLocationId == p.DestinationId).ToList();
             foreach (var packet in deliveredPackets)
             {
-                _packetsDelivered++;
-                _totalLatencySum += (_simulationTime - packet.CreationTime); // Assumendo che aggiungi CreationTime al DataPacket
+                // Aggiorna le statistiche per il flusso specifico
+                if (_flowStats.TryGetValue(packet.SourceId, out var stats))
+                {
+                    stats.PacketsDelivered++;
+                    stats.TotalLatencySum += (_simulationTime - packet.CreationTime);
+                    stats.FinalPath = packet.FullPath;
+                }
             }
             _packets.RemoveAll(p => p.CurrentLocationId == p.DestinationId);
 
