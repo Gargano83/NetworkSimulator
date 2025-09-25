@@ -1,0 +1,103 @@
+{
+  "nodes": [
+    {
+      "id": "1",
+      "label": "Utente (Roma)",
+      "type": "Sensor",
+      "dataRate": 500,
+      "packetSize": 100
+    },
+    {
+      "id": "2",
+      "label": "ISP Locale (Roma)",
+      "type": "Router"
+    },
+    {
+      "id": "3",
+      "label": "CDN PoP (Francoforte)",
+      "type": "Router"
+    },
+    {
+      "id": "4",
+      "label": "CDN PoP (Londra)",
+      "type": "Router"
+    },
+    {
+      "id": "5",
+      "label": "CDN PoP (New York)",
+      "type": "Router"
+    },
+    {
+      "id": "6",
+      "label": "CDN PoP (Tokyo)",
+      "type": "Router"
+    },
+    {
+      "id": "7",
+      "label": "Datacenter Origine (Cloud)",
+      "type": "Internet"
+    }
+  ],
+  "links": [
+    {
+      "id": "L1",
+      "from": "1",
+      "to": "2",
+      "technology": "DSL"
+    },
+    {
+      "id": "L2",
+      "from": "2",
+      "to": "3",
+      "technology": "Fiber"
+    },
+    {
+      "id": "L3",
+      "from": "3",
+      "to": "4",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L4",
+      "from": "4",
+      "to": "5",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L5",
+      "from": "5",
+      "to": "6",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L6",
+      "from": "3",
+      "to": "5",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L7",
+      "from": "3",
+      "to": "7",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L8",
+      "from": "5",
+      "to": "7",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L9",
+      "from": "6",
+      "to": "7",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L10",
+      "from": "4",
+      "to": "6",
+      "technology": "SatelliteGEO"
+    }
+  ]
+}
