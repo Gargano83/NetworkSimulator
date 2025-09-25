@@ -19,7 +19,7 @@
     <!-- Riga 1: Controlli Principali -->
     <div class="row g-3 mb-3">
         <!-- Colonna 1: Carica Topologia -->
-        <div class="col-lg-4">
+        <div class="col-lg-5">
             <div class="card h-100">
                 <div class="card-body">
                     <h6 class="card-title fw-bold">Carica Topologia Predefinita</h6>
@@ -33,11 +33,15 @@
                         </select>
                         <button class="btn btn-outline-secondary" @onclick="LoadTopology">Carica</button>
                     </div>
+                    <div class="controls mt-3 d-flex gap-2">
+                        <button class="btn btn-primary" @onclick="AddNewNode" disabled="@isSimulationRunning">Aggiungi Nodo</button>
+                        <button class="btn btn-success" @onclick="EnterAddLinkMode" disabled="@isSimulationRunning">Aggiungi Collegamento</button>
+                    </div>
                 </div>
             </div>
         </div>
         <!-- Colonna 2: Controllo Simulazione -->
-        <div class="col-lg-4">
+        <div class="col-lg-7">
             <div class="card h-100">
                 <div class="card-body">
                     <h6 class="card-title fw-bold">Controllo Simulazione</h6>
@@ -79,20 +83,10 @@
                 </div>
             </div>
         </div>
-        <!-- Colonna 3: Proprietà Elemento Selezionato -->
-        <div class="col-lg-4">
-            <PropertiesPanel SelectedItem="selectedItem"
-                             OnItemUpdated="HandleItemUpdate"
-                             OnItemDeleted="HandleItemDelete" />
-        </div>
     </div>
     <!-- Riga 2: Canvas -->
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="controls mb-2">
-                <button class="btn btn-primary me-2" @onclick="AddNewNode" disabled="@isSimulationRunning">Aggiungi Nodo</button>
-                <button class="btn btn-success me-2" @onclick="EnterAddLinkMode" disabled="@isSimulationRunning">Aggiungi Collegamento</button>
-            </div>
+    <div class="row g-3 mb-3">
+        <div class="col-lg-8">
             <div style="position: relative;">
                 <div id="network-canvas" style="width: 100%; height: 500px; border: 1px solid #dee2e6; background-color: #f8f9fa; border-radius: .375rem;"></div>
                 <div class="btn-group" role="group" style="position: absolute; bottom: 15px; right: 15px; z-index: 10;">
@@ -104,6 +98,11 @@
                     </button>
                 </div>
             </div>
+        </div>
+        <div class="col-lg-4">
+            <PropertiesPanel SelectedItem="selectedItem"
+                             OnItemUpdated="HandleItemUpdate"
+                             OnItemDeleted="HandleItemDelete" />
         </div>
     </div>
     <!-- Riga 3: Riepilogo Calcolo Percorso -->
