@@ -44,6 +44,34 @@
     <div class="card-body">
         <p class="small text-muted">Esegui lo scenario di guasto per ogni algoritmo per popolare il grafico. I dati vengono aggiunti in tempo reale.</p>
         <canvas id="linkFailureChart"></canvas>
+        @if (AnalysisState.LinkFailureResults.Any())
+        {
+            <div class="table-responsive mt-3">
+                <table class="table table-sm table-bordered text-center">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Serie</th>
+                            @foreach (var timePoint in AnalysisState.LinkFailureResults.First().Value)
+                            {
+                                <th>@timePoint.Time s</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var series in AnalysisState.LinkFailureResults)
+                        {
+                            <tr>
+                                <td class="fw-bold">@series.Key</td>
+                                @foreach (var dataPoint in series.Value)
+                                {
+                                    <td>@dataPoint.DeliveryRate.ToString("F2")</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 </div>
 
@@ -98,7 +126,7 @@
         // Estrae le etichette del tempo (asse X)
         var labels = (dijkstraData ?? aiData ?? new List<TimeSeriesDataPoint>()).Select(d => d.Time + "s");
 
-        await JSRuntime.InvokeVoidAsync("chartInterop.createOrUpdateChart", "linkFailureChart", labels, datasets);
+        await JSRuntime.InvokeVoidAsync("chartInterop.createOrUpdateChart", "linkFailureChart", labels, datasets, "Tempo di Simulazione (s)", "Tasso di Consegna (%)");
     }
 
     // Metodo per recuperare in modo sicuro i dati per la tabella

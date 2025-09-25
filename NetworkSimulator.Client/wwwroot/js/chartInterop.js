@@ -1,7 +1,7 @@
 ﻿let charts = {};
 
 window.chartInterop = {
-    createOrUpdateChart: function (canvasId, labels, datasets) {
+    createOrUpdateChart: function (canvasId, labels, datasets, xTitle, yTitle) {
         if (charts[canvasId]) {
             charts[canvasId].destroy();
         }
@@ -14,7 +14,22 @@ window.chartInterop = {
                 datasets: datasets
             },
             options: {
-                scales: { y: { beginAtZero: true, max: 100 } },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: xTitle
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: yTitle
+                        }
+                    }
+                },
                 animation: { duration: 0 }
             }
         });
