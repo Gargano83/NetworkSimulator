@@ -31,6 +31,8 @@ namespace NetworkSimulator.Client.Analysis
         // Nuova proprietà per i risultati del Caso 3
         public Dictionary<string, Dictionary<string, List<LatencyDataPoint>>> CongestionTestResults { get; set; } = new();
 
+        public bool IsCongestionTestRunning { get; private set; } = false;
+
         public event Action? OnChange;
 
         public void AddNormalConditionFlowResults(string algorithmName, List<FlowStats> stats)
@@ -59,16 +61,30 @@ namespace NetworkSimulator.Client.Analysis
                 if (!deliveryDataPoints.Any(p => p.Time == time))
                     deliveryDataPoints.Add(new TimeSeriesDataPoint { Time = time, DeliveryRate = deliveryRate });
 
-                // -- Dati per il Grafico 3: Latenza Media --
-                if (!CongestionTestResults[algorithmName].ContainsKey(flowStat.SourceNodeId))
-                    CongestionTestResults[algorithmName][flowStat.SourceNodeId] = new List<LatencyDataPoint>();
+                if (IsCongestionTestRunning)
+                {
+                    // -- Dati per il Grafico 3: Latenza Media --
+                    if (!CongestionTestResults[algorithmName].ContainsKey(flowStat.SourceNodeId))
+                        CongestionTestResults[algorithmName][flowStat.SourceNodeId] = new List<LatencyDataPoint>();
 
-                double averageLatency = (flowStat.PacketsDelivered > 0) ? flowStat.TotalLatencySum / flowStat.PacketsDelivered : 0;
-                var latencyDataPoints = CongestionTestResults[algorithmName][flowStat.SourceNodeId];
-                if (!latencyDataPoints.Any(p => p.Time == time))
-                    latencyDataPoints.Add(new LatencyDataPoint { Time = time, AverageLatency = averageLatency });
+                    double averageLatency = (flowStat.PacketsDelivered > 0) ? flowStat.TotalLatencySum / flowStat.PacketsDelivered : 0;
+                    var latencyDataPoints = CongestionTestResults[algorithmName][flowStat.SourceNodeId];
+                    if (!latencyDataPoints.Any(p => p.Time == time))
+                        latencyDataPoints.Add(new LatencyDataPoint { Time = time, AverageLatency = averageLatency });
+                }  
             }
             NotifyStateChanged();
+        }
+
+        public void ClearCongestionResults()
+        {
+            CongestionTestResults.Clear();
+            NotifyStateChanged(); // Notifica la UI per aggiornare il grafico
+        }
+
+        public void SetCongestionTestStatus(bool isRunning)
+        {
+            IsCongestionTestRunning = isRunning;
         }
 
         public void Clear()
@@ -76,6 +92,7 @@ namespace NetworkSimulator.Client.Analysis
             NormalConditionFlowResults.Clear();
             LinkFailureFlowResults.Clear();
             CongestionTestResults.Clear();
+            IsCongestionTestRunning = false;
             NotifyStateChanged();
         }
 

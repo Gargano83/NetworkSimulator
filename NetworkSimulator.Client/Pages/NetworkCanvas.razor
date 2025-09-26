@@ -371,6 +371,7 @@
         simulationStats = null;     // Pulisce la dashboard precedente
         eventLogMessages.Clear();   // Pulisce il log precedente
         liveStatsMessages.Clear();
+        AnalysisState.SetCongestionTestStatus(congestionEnabled);
         isBusy = true;
         simulationStatusMessage = "Avvio della simulazione in corso...";
 
@@ -384,6 +385,12 @@
         {
             AnalysisState.NormalConditionFlowResults.Remove("AI");
             AnalysisState.LinkFailureFlowResults.Remove("AI");
+        }
+
+        // Se lo scenario di congestione NON è abilitato, assicurati che i suoi dati siano vuoti
+        if (!congestionEnabled)
+        {
+            AnalysisState.ClearCongestionResults();
         }
 
         var graphData = new GraphData { Nodes = nodes, Links = links };
@@ -415,6 +422,7 @@
     private async Task StopSimulation()
     {
         isBusy = true;
+        AnalysisState.SetCongestionTestStatus(false);
         simulationStatusMessage = "Arresto della simulazione in corso...";
         var response = await Http.PostAsync("api/simulation/stop", null);
         if (response.IsSuccessStatusCode)
