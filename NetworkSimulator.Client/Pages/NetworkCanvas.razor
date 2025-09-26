@@ -101,6 +101,13 @@
                 <!-- Riga 2: Canvas -->
                 <div class="row g-3 mb-3">
                     <div class="col-lg-8">
+                        @if (showAddLinkStatus)
+                        {
+                            <div class="alert alert-info py-2" role="alert">
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                                <strong>Modalità Aggiungi Collegamento:</strong> Seleziona il nodo di partenza, poi quello di destinazione. Clicca sullo sfondo per annullare.
+                            </div>
+                        }
                         <div style="position: relative;">
                             <div id="network-canvas" style="width: 100%; height: 500px; border: 1px solid #dee2e6; background-color: #f8f9fa; border-radius: .375rem;"></div>
                             <div class="btn-group" role="group" style="position: absolute; bottom: 15px; right: 15px; z-index: 10;">

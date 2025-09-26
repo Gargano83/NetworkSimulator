@@ -76,17 +76,47 @@ window.networkGraph = {
         network = new vis.Network(container, data, options);
 
         network.on("click", function (params) {
-            if (params.nodes.length > 0) {
-                // Notifica a C# che un nodo è stato cliccato (per la selezione)
-                dotNetHelper.invokeMethodAsync('HandleNodeClick', params.nodes[0]);
-            }
-            else if (params.edges.length > 0) {
-                // Notifica a C# che un link è stato cliccato (per la selezione)
-                dotNetHelper.invokeMethodAsync('HandleLinkClick', params.edges[0]);
-            }
-            else {
-                // Se si clicca sullo sfondo, deseleziona tutto (opzionale ma consigliato)
-                dotNetHelper.invokeMethodAsync('HandleCanvasClick');
+            if (isAddingLinkMode) {
+                if (params.nodes.length > 0) {
+                    const clickedNodeId = params.nodes[0];
+                    if (firstNodeIdSelected === null) {
+                        // Questo è il primo nodo cliccato
+                        firstNodeIdSelected = clickedNodeId;
+                        // Potremmo inviare un messaggio a C# per dire "Seleziona il nodo di destinazione"
+                        console.log('Nodo di partenza selezionato:', firstNodeIdSelected);
+                        // Evidenziamo il nodo selezionato per dare un feedback
+                        network.selectNodes([firstNodeIdSelected]);
+                    } else {
+                        // Questo è il secondo nodo cliccato
+                        if (firstNodeIdSelected !== clickedNodeId) {
+                            // Chiama il C# per creare il collegamento
+                            dotNetHelper.invokeMethodAsync('CreateLink', firstNodeIdSelected, clickedNodeId);
+                        }
+                        // Resetta lo stato, sia che il link sia stato creato o meno
+                        isAddingLinkMode = false;
+                        firstNodeIdSelected = null;
+                        network.unselectAll();
+                    }
+                } else {
+                    // L'utente ha cliccato sullo sfondo, annulliamo la modalità
+                    isAddingLinkMode = false;
+                    firstNodeIdSelected = null;
+                    network.unselectAll();
+                    dotNetHelper.invokeMethodAsync('HandleCanvasClick');
+                }
+            } else {
+                if (params.nodes.length > 0) {
+                    // Notifica a C# che un nodo è stato cliccato (per la selezione)
+                    dotNetHelper.invokeMethodAsync('HandleNodeClick', params.nodes[0]);
+                }
+                else if (params.edges.length > 0) {
+                    // Notifica a C# che un link è stato cliccato (per la selezione)
+                    dotNetHelper.invokeMethodAsync('HandleLinkClick', params.edges[0]);
+                }
+                else {
+                    // Se si clicca sullo sfondo, deseleziona tutto (opzionale ma consigliato)
+                    dotNetHelper.invokeMethodAsync('HandleCanvasClick');
+                }
             }
         });
     },
