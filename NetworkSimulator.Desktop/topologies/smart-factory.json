@@ -1,0 +1,100 @@
+{
+  "nodes": [
+    {
+      "id": "1",
+      "label": "Sensore PLC Linea A",
+      "type": "Sensor",
+      "dataRate": 10,
+      "packetSize": 2
+    },
+    {
+      "id": "2",
+      "label": "Sensore Temperatura Linea B",
+      "type": "Sensor",
+      "dataRate": 5,
+      "packetSize": 1
+    },
+    {
+      "id": "3",
+      "label": "Videocamera HD Qualità",
+      "type": "Sensor",
+      "dataRate": 2000,
+      "packetSize": 500
+    },
+    {
+      "id": "4",
+      "label": "Gateway Zona Produzione",
+      "type": "Gateway"
+    },
+    {
+      "id": "5",
+      "label": "Gateway Zona Magazzino",
+      "type": "Gateway"
+    },
+    {
+      "id": "6",
+      "label": "Router Core Fabbrica",
+      "type": "Router"
+    },
+    {
+      "id": "7",
+      "label": "Firewall & Edge Router",
+      "type": "Router"
+    },
+    {
+      "id": "8",
+      "label": "Internet",
+      "type": "Internet"
+    }
+  ],
+  "links": [
+    {
+      "id": "L1",
+      "from": "1",
+      "to": "4",
+      "technology": "WiFi"
+    },
+    {
+      "id": "L2",
+      "from": "2",
+      "to": "4",
+      "technology": "WiFi"
+    },
+    {
+      "id": "L3",
+      "from": "3",
+      "to": "5",
+      "technology": "Fiber"
+    },
+    {
+      "id": "L4",
+      "from": "4",
+      "to": "6",
+      "technology": "Fiber"
+    },
+    {
+      "id": "L5",
+      "from": "5",
+      "to": "6",
+      "technology": "Fiber"
+    },
+    {
+      "id": "L6",
+      "from": "6",
+      "to": "7",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L7",
+      "from": "7",
+      "to": "8",
+      "technology": "Fiber"
+    },
+    {
+      "id": "L8",
+      "from": "7",
+      "to": "8",
+      "technology": "FiveG"
+    }
+  ]
+}

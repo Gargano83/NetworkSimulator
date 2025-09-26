@@ -1,0 +1,108 @@
+﻿@using NetworkSimulator.Shared
+@using System.Globalization
+
+<div class="card">
+    <div class="card-header">
+        <strong>Proprietà Elemento Selezionato</strong>
+    </div>
+
+    @if (SelectedItem != null)
+    {
+        <div class="card-body">
+            @if (SelectedItem is Node node)
+            {
+                <div class="mb-3">
+                    <label for="nodeLabel" class="form-label">Label</label>
+                    <input id="nodeLabel" class="form-control" @bind="node.Label" />
+                </div>
+                <div class="mb-3">
+                    <label for="nodeType" class="form-label">Tipo</label>
+                    <select id="nodeType" class="form-select" @bind="node.Type">
+                        @foreach (NodeType type in Enum.GetValues(typeof(NodeType)))
+                        {
+                            <option value="@type">@type</option>
+                        }
+                    </select>
+                </div>
+
+                @if (node.Type == NodeType.Sensor)
+                {
+                    <div class="mb-3">
+                        <label class="form-label">Data Rate (KB/s)</label>
+                        <input type="number" class="form-control" @bind="node.DataRate" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Dimensione Pacchetto (KB)</label>
+                        <input type="number" class="form-control" @bind="node.PacketSize" />
+                    </div>
+                }
+            }
+            else if (SelectedItem is Link link)
+            {
+                <div class="mb-3">
+                    <label for="linkTech" class="form-label">Tecnologia</label>
+                    <select id="linkTech" class="form-select" @bind="link.Technology">
+                        @foreach (LinkTechnology tech in Enum.GetValues(typeof(LinkTechnology)))
+                        {
+                            <option value="@tech">@tech</option>
+                        }
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Latenza (ms)</label>
+                    <input type="number" step="0.01" class="form-control" @bind="link.Latency" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Banda (Mbps)</label>
+                    <input type="number" step="0.01" class="form-control" @bind="link.Bandwidth" />
+                </div>
+            }
+        </div>
+        <div class="card-footer d-flex justify-content-between">
+            <button class="btn btn-primary" @onclick="SaveChanges">Salva Modifiche</button>
+            <button class="btn btn-danger" @onclick="DeleteItem">Elimina</button>
+        </div>
+    }
+    else
+    {
+        <div class="card-body">
+            <p class="text-muted">Clicca su un nodo o un collegamento per vederne le proprietà.</p>
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// L'oggetto (Nodo o Link) attualmente selezionato nel grafo.
+    /// </summary>
+    [Parameter]
+    public object? SelectedItem { get; set; }
+
+    /// <summary>
+    /// Evento per notificare al componente genitore che le proprietà sono state modificate.
+    /// </summary>
+    [Parameter]
+    public EventCallback<object> OnItemUpdated { get; set; }
+
+    /// <summary>
+    /// Evento per notificare al componente genitore che l'elemento deve essere eliminato.
+    /// </summary>
+    [Parameter]
+    public EventCallback<object> OnItemDeleted { get; set; }
+
+    private async Task SaveChanges()
+    {
+        if (SelectedItem != null)
+        {
+            await OnItemUpdated.InvokeAsync(SelectedItem);
+        }
+    }
+
+    private async Task DeleteItem()
+    {
+        if (SelectedItem != null)
+        {
+            await OnItemDeleted.InvokeAsync(SelectedItem);
+        }
+    }
+}

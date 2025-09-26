@@ -1,0 +1,720 @@
+﻿@page "/simulator"
+@page "/"
+@using Microsoft.Maui.Storage
+@using NetworkSimulator.Desktop.Services
+@using NetworkSimulator.Shared
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@inject IJSRuntime JSRuntime
+@inject AnalysisStateService AnalysisState
+@inject SimulationService SimulationService
+@implements IAsyncDisposable
+
+<div class="container-fluid">
+    <h3 class="mb-3">Simulatore di Rete Dinamica</h3>
+
+    <ul class="nav nav-tabs" id="myTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="simulator-tab" data-bs-toggle="tab" data-bs-target="#simulator-tab-pane" type="button" role="tab" aria-controls="simulator-tab-pane" aria-selected="true">Simulatore di Rete</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="analysis-tab" data-bs-toggle="tab" data-bs-target="#analysis-tab-pane" type="button" role="tab" aria-controls="analysis-tab-pane" aria-selected="false">Analisi Casi di Studio</button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="myTabContent">
+        <div class="tab-pane fade show active" id="simulator-tab-pane" role="tabpanel" aria-labelledby="simulator-tab" tabindex="0">
+            <div class="pt-3">
+                <!-- Riga 1: Controlli Principali -->
+                <div class="row g-3 mb-3">
+                    <!-- Colonna 1: Carica Topologia -->
+                    <div class="col-lg-5">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title fw-bold">Carica Topologia Predefinita</h6>
+                                <div class="input-group">
+                                    <select class="form-select" @bind="selectedTopologyFile">
+                                        <option value="" disabled selected>Seleziona una topologia...</option>
+                                        <option value="topologies/simple-test.json">Test Semplice</option>
+                                        <option value="topologies/europe-backbone.json">Dorsale Europea</option>
+                                        <option value="topologies/hub-spoke-iot.json">Rete IoT Hub-and-Spoke</option>
+                                        <option value="topologies/us-peering.json">Dorsale ISP (USA)</option>
+                                        <option value="topologies/smart-factory.json">Fabbrica Intelligente 4.0 (IIoT)</option>
+                                        <option value="topologies/global-cdn.json">Rete CDN Globale con Dorsali Ridondanti</option>
+                                    </select>
+                                    <button class="btn btn-outline-secondary" @onclick="LoadTopology">Carica</button>
+                                </div>
+                                <div class="controls mt-3 d-flex gap-2">
+                                    <button class="btn btn-primary" @onclick="AddNewNode" disabled="@isSimulationRunning">Aggiungi Nodo</button>
+                                    <button class="btn btn-success" @onclick="EnterAddLinkMode" disabled="@isSimulationRunning">Aggiungi Collegamento</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Colonna 2: Controllo Simulazione -->
+                    <div class="col-lg-7">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title fw-bold">Controllo Simulazione</h6>
+                                <div class="d-flex align-items-center flex-wrap gap-3">
+                                    <div class="d-flex flex-column">
+                                        <label>&nbsp;</label>
+                                        @if (isSimulationRunning)
+                                        {
+                                            <button class="btn btn-danger btn-sm" @onclick="StopSimulation" disabled="@isBusy">Ferma Simulazione</button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-success btn-sm" @onclick="StartSimulation" disabled="@isBusy">Avvia Simulazione</button>
+                                        }
+                                    </div>
+
+                                    <div class="ms-auto d-flex flex-column">
+                                        <label for="routing" class="form-label mb-1 small">Algoritmo di Routing:</label>
+                                        <select id="routing" class="form-select form-select-sm" @bind="selectedRoutingAlgorithm" disabled="@isSimulationRunning">
+                                            <option value="Dijkstra">Dijkstra</option>
+                                            <option value="AI">AI (Q-Learning)</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="d-flex flex-column">
+                                        <label for="metric" class="form-label mb-1 small">Ottimizza per:</label>
+                                        <select id="metric" class="form-select form-select-sm" @bind="selectedMetric" disabled="@isSimulationRunning">
+                                            <option value="latency">Latenza</option>
+                                            <option value="bandwidth">Banda</option>
+                                            <option value="reliability">Affidabilità</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <hr class="my-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="failureSwitch"
+                                           checked="@linkFailureEnabled"
+                                           @onchange="(ChangeEventArgs e) => { linkFailureEnabled = (bool)e.Value; OnLinkFailureEnabledChanged(); }"
+                                           disabled="@isSimulationRunning">
+                                    <label class="form-check-label" for="failureSwitch"><strong>Abilita Scenario di Guasto</strong></label>
+                                </div>
+
+                                @if (linkFailureEnabled)
+                                {
+                                    <div class="row g-2 mt-2 align-items-end">
+                                        <div class="col-md-4">
+                                            <label class="form-label small mb-1">Tipo di Guasto:</label>
+                                            <div class="form-control form-control-sm" style="padding-top: 0.4rem;">
+                                                <div class="form-check form-check-inline">
+                                                    <input class="form-check-input" type="radio" name="failureTypeRadio" id="radioLink" value="link" checked="@(failureType == "link")" @onchange="@(() => failureType = "link")" />
+                                                    <label class="form-check-label small" for="radioLink">Link</label>
+                                                </div>
+                                                <div class="form-check form-check-inline">
+                                                    <input class="form-check-input" type="radio" name="failureTypeRadio" id="radioNode" value="node" checked="@(failureType == "node")" @onchange="@(() => failureType = "node")" />
+                                                    <label class="form-check-label small" for="radioNode">Nodo</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-5">
+                                            <label class="form-label small mb-1">Elemento da Rimuovere:</label>
+                                            <select class="form-select form-select-sm" @bind="failureTargetId" disabled="@isSimulationRunning">
+                                                <option value="">Seleziona un elemento...</option>
+                                                @if (failureType == "link")
+                                                {
+                                                    @foreach (var link in links)
+                                                    {
+                                                        <option value="@link.Id">@link.Id (L:@link.Latency B:@link.Bandwidth)</option>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var node in nodes)
+                                                    {
+                                                        <option value="@node.Id">@node.Label</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small mb-1">Tempo Innesco (s):</label>
+                                            <input type="number" class="form-control form-control-sm" @bind="failureTime" disabled="@isSimulationRunning" />
+                                        </div>
+                                    </div>
+                                }
+
+                                <hr class="my-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="congestionSwitch" @bind="congestionEnabled" disabled="@isSimulationRunning">
+                                    <label class="form-check-label" for="congestionSwitch"><strong>Abilita Scenario di Congestione</strong></label>
+                                </div>
+
+                                @if (congestionEnabled)
+                                {
+                                    <div class="row g-2 mt-2 align-items-center">
+                                        <div class="col-md-5">
+                                            <label class="form-label small mb-0">Link da Congestionare:</label>
+                                            <select class="form-select form-select-sm" @bind="congestionLinkId" disabled="@isSimulationRunning">
+                                                <option value="">Seleziona un link...</option>
+                                                @foreach (var link in links)
+                                                {
+                                                    <option value="@link.Id">@link.Id (L:@link.Latency B:@link.Bandwidth)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small mb-0">Tempo Innesco (s):</label>
+                                            <input type="number" class="form-control form-control-sm" @bind="congestionTime" disabled="@isSimulationRunning" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small mb-0">Latenza (+ms):</label>
+                                            <input type="number" class="form-control form-control-sm" @bind="congestionValue" disabled="@isSimulationRunning" />
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (!string.IsNullOrEmpty(simulationStatusMessage))
+                                {
+                                    <div class="text-muted small mt-3">@simulationStatusMessage</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Riga 2: Canvas -->
+                <div class="row g-3 mb-3">
+                    <div class="col-lg-8">
+                        @if (showAddLinkStatus)
+                        {
+                            <div class="alert alert-info py-2" role="alert">
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                                <strong>Modalità Aggiungi Collegamento:</strong> Seleziona il nodo di partenza, poi quello di destinazione. Clicca sullo sfondo per annullare.
+                            </div>
+                        }
+                        <div style="position: relative;">
+                            <div id="network-canvas" style="width: 100%; height: 500px; border: 1px solid #dee2e6; background-color: #f8f9fa; border-radius: .375rem;"></div>
+                            <div class="btn-group" role="group" style="position: absolute; bottom: 15px; right: 15px; z-index: 10;">
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="ZoomOut">
+                                    <span class="bi bi-zoom-out"></span>
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="ZoomIn">
+                                    <span class="bi bi-zoom-in"></span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <PropertiesPanel SelectedItem="selectedItem"
+                                         OnItemUpdated="HandleItemUpdate"
+                                         OnItemDeleted="HandleItemDelete" />
+                    </div>
+                </div>
+                <!-- Riga 3: Riepilogo Calcolo Percorso -->
+                <div class="row mb-3">
+                    <div class="col-12">
+                        @if (isSimulationRunning && latestFlowResults.Any())
+                        {
+                            <ResultsPanel FlowResults="latestFlowResults"
+                                          AlgorithmName="@latestAlgorithmUsed"
+                                          Metric="@latestMetricUsed"
+                                          AllNodes="nodes" />
+                        }
+                    </div>
+                </div>
+                <!-- Riga 4: Log e Dashboard -->
+                <div class="row g-3">
+                    <div class="col-lg-4">
+                        <EventLog LogMessages="eventLogMessages" Title="Log Eventi Principali" />
+                    </div>
+                    <div class="col-lg-4">
+                        <EventLog LogMessages="liveStatsMessages" Title="Statistiche in Tempo Reale" />
+                    </div>
+                    <div class="col-lg-4">
+                        <Dashboard Stats="simulationStats" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="analysis-tab-pane" role="tabpanel" aria-labelledby="analysis-tab" tabindex="0">
+        <div class="pt-3">
+            <AnalysisDashboard AllNodes="nodes" />
+        </div>
+    </div>
+</div> 
+
+@code {
+    private int nodeCounter = 1;
+    private DotNetObjectReference<NetworkCanvas> objRef;
+
+    private object? selectedItem; // L'elemento (Nodo o Link) attualmente selezionato
+    private bool showAddLinkStatus = false;
+    private int linkCounter = 1;
+    private List<Node> nodes = new List<Node>();
+    private List<Link> links = new List<Link>();
+
+    private bool isSimulationRunning = false;
+    private bool isBusy = false;
+    private string simulationStatusMessage = "Disegna una rete e premi 'Avvia Simulazione'.";
+
+    private string selectedTopologyFile = "";
+
+    private List<FlowResult> latestFlowResults = new List<FlowResult>();
+    private string latestAlgorithmUsed = "";
+    private string latestMetricUsed = "";
+
+    private string selectedMetric = "latency";
+    private string selectedRoutingAlgorithm = "Dijkstra";
+
+    private List<string> eventLogMessages = new List<string>();
+    private SimulationStats? simulationStats;
+
+    private List<string> liveStatsMessages = new List<string>();
+    private Random random = new Random();
+
+    // --- NUOVE VARIABILI PER LO SCENARIO DI CONGESTIONE ---
+    private bool congestionEnabled = false;
+    private string? congestionLinkId;
+    private int congestionTime = 20;    // Default: 20 secondi
+    private double congestionValue = 500; // Default: +500 ms
+    // --- FINE NUOVE VARIABILI ---
+
+    // --- NUOVE VARIABILI PER LO SCENARIO DI GUASTO ---
+    private bool linkFailureEnabled = false;
+    private string failureType = "link"; // Valore di default
+    private string? failureTargetId;
+    private int failureTime = 25; // Default: 25 secondi
+    // --- FINE NUOVE VARIABILI ---
+
+    protected override void OnInitialized()
+    {
+        // Iscrizione agli eventi C# del SimulationService invece di usare SignalR
+        SimulationService.OnUpdateSimulationState += UpdateTopologyState;
+        SimulationService.OnUpdateAllPaths += UpdatePathsState;
+        SimulationService.OnLogEvent += LogEventState;
+        SimulationService.OnRemoveNetworkElement += RemoveNetworkElement;
+        SimulationService.OnUpdateLiveStats += UpdateLiveStats;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Annulla l'iscrizione agli eventi
+        SimulationService.OnUpdateSimulationState -= UpdateTopologyState;
+        SimulationService.OnUpdateAllPaths -= UpdatePathsState;
+        SimulationService.OnLogEvent -= LogEventState;
+        SimulationService.OnRemoveNetworkElement -= RemoveNetworkElement;
+        SimulationService.OnUpdateLiveStats -= UpdateLiveStats;
+        objRef?.Dispose();
+    }
+
+    // Metodi handler che reagiscono agli eventi del servizio
+    private async void UpdateTopologyState(List<DataPacket> packets, List<Link> updatedLinks)
+    {
+        await JSRuntime.InvokeVoidAsync("networkGraph.updatePackets", packets);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void UpdatePathsState(List<FlowResult> results, string algorithm, string metric)
+    {
+        latestFlowResults = results;
+        latestAlgorithmUsed = algorithm;
+        latestMetricUsed = metric;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void LogEventState(string message)
+    {
+        eventLogMessages.Insert(0, message);
+        if (eventLogMessages.Count > 200) eventLogMessages.RemoveAt(200);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void RemoveNetworkElement(string type, string id)
+    {
+        if (type == "node") await JSRuntime.InvokeVoidAsync("networkGraph.removeNode", id);
+        else if (type == "link") await JSRuntime.InvokeVoidAsync("networkGraph.removeLink", id);
+    }
+
+    private async void UpdateLiveStats(int time, List<LiveFlowStats> statsList)
+    {
+        // Calcola il messaggio per il log in tempo reale
+        string statsMessage = $"T={time}s | Pkts: {statsList.Sum(s => s.PacketsDelivered)}/{statsList.Sum(s => s.PacketsGenerated)}";
+
+        // CORREZIONE: Aggiorna la lista locale 'liveStatsMessages'
+        liveStatsMessages.Insert(0, statsMessage);
+        if (liveStatsMessages.Count > 50) liveStatsMessages.RemoveAt(50);
+
+        // Invia i dati al servizio di stato (questo è corretto e notificherà i grafici)
+        AnalysisState.AddLiveSimulationData(selectedRoutingAlgorithm, time, statsList);
+
+        // Notifica a QUESTO componente di aggiornarsi per mostrare il nuovo messaggio di log
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            objRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("networkGraph.init", "network-canvas", objRef);
+        }
+    }
+
+    /// <summary>
+    /// Carica una topologia di rete da un file JSON e la visualizza.
+    /// </summary>
+    private async Task LoadTopology()
+    {
+        if (string.IsNullOrEmpty(selectedTopologyFile)) return;
+        AnalysisState.Clear();
+        if (isSimulationRunning) StopSimulation();
+
+        try
+        {
+            // Usiamo il FileSystem di MAUI per leggere il file locale
+            using var stream = await FileSystem.OpenAppPackageFileAsync(selectedTopologyFile);
+            using var reader = new StreamReader(stream);
+
+            var jsonContent = await reader.ReadToEndAsync();
+            var graphData = JsonSerializer.Deserialize<GraphData>(jsonContent, jsonOptions);
+            if (graphData?.Nodes != null && graphData.Links != null)
+            {
+                // Assegna metriche di default ai link caricati
+                foreach (var link in graphData.Links)
+                {
+                    AssignDefaultMetrics(link);
+                }
+
+                // Aggiorna lo stato del componente con i nuovi dati
+                nodes = graphData.Nodes;
+                links = graphData.Links;
+
+                // Aggiorna i contatori per evitare ID duplicati se si aggiungono nuovi nodi/link
+                nodeCounter = nodes.Count > 0 ? nodes.Max(n => int.Parse(n.Id)) + 1 : 1;
+                linkCounter = links.Count > 0 ? links.Max(l => int.Parse(l.Id.Substring(1))) + 1 : 1;
+
+                // Prima di passare i dati a JS, creiamo degli oggetti anonimi dove convertiamo esplicitamente gli enum in stringhe.
+                var nodesForJs = nodes.Select(n => new
+                {
+                    id = n.Id,
+                    label = n.Label,
+                    type = n.Type.ToString()
+                });
+
+                var linksForJs = links.Select(l => new
+                {
+                    id = l.Id,
+                    from = l.From,
+                    to = l.To,
+                    label = $"L:{l.Latency} B:{l.Bandwidth}",
+                    technology = l.Technology.ToString()
+                });
+
+                // Chiama una nuova funzione JS per disegnare l'intera topologia
+                await JSRuntime.InvokeVoidAsync("networkGraph.drawTopology", nodesForJs, linksForJs);
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Gestisci eventuali errori di caricamento o parsing del JSON
+            simulationStatusMessage = $"Errore nel caricamento della topologia: {ex.Message}";
+        }
+    }
+
+    // Oggetto per configurare come il JSON viene letto
+    private JsonSerializerOptions jsonOptions = new JsonSerializerOptions
+    {
+        // Ignora le differenze tra maiuscole e minuscole (es. "type" in JSON e "Type" in C#)
+        PropertyNameCaseInsensitive = true,
+        // --- QUESTA È LA REGOLA CHIAVE ---
+        // Aggiunge il "traduttore" che converte le stringhe in enum
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    /// <summary>
+    /// Invia la topologia al backend e avvia il motore di simulazione.
+    /// </summary>
+    private async Task StartSimulation()
+    {
+        latestFlowResults.Clear();
+        simulationStats = null;     // Pulisce la dashboard precedente
+        eventLogMessages.Clear();   // Pulisce il log precedente
+        liveStatsMessages.Clear();
+        AnalysisState.SetCongestionTestStatus(congestionEnabled);
+        AnalysisState.SetLinkFailureTestStatus(linkFailureEnabled);
+        isBusy = true;
+        simulationStatusMessage = "Avvio della simulazione in corso...";
+
+        // Pulisce i dati di analisi relativi al tipo di simulazione che sta per partire
+        if (selectedRoutingAlgorithm == "Dijkstra")
+        {
+            AnalysisState.NormalConditionFlowResults.Remove("Dijkstra");
+            AnalysisState.LinkFailureFlowResults.Remove("Dijkstra");
+        }
+        else
+        {
+            AnalysisState.NormalConditionFlowResults.Remove("AI");
+            AnalysisState.LinkFailureFlowResults.Remove("AI");
+        }
+
+        // Se lo scenario di guasto NON è abilitato, assicurati che i suoi dati siano vuoti
+        if (!linkFailureEnabled)
+        {
+            AnalysisState.ClearLinkFailureResults();
+        }
+
+        // Se lo scenario di congestione NON è abilitato, assicurati che i suoi dati siano vuoti
+        if (!congestionEnabled)
+        {
+            AnalysisState.ClearCongestionResults();
+        }
+
+        var graphData = new GraphData { Nodes = nodes, Links = links };
+        
+        SimulationService.StartSimulation(graphData, selectedRoutingAlgorithm, selectedMetric,
+            congestionEnabled ? congestionLinkId : null, congestionTime, congestionValue,
+            linkFailureEnabled ? failureType : null, failureTargetId, failureTime);
+
+        isSimulationRunning = true;
+        simulationStatusMessage = "Simulazione avviata...";
+        isBusy = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Invia il comando per fermare la simulazione sul backend.
+    /// </summary>
+    private void StopSimulation()
+    {
+        isBusy = true;
+        simulationStatusMessage = "Arresto della simulazione in corso...";
+        
+        SimulationService.StopSimulation();
+        var finalResults = SimulationService.GetFinalResults();
+
+        AnalysisState.SetCongestionTestStatus(false);
+        AnalysisState.SetLinkFailureTestStatus(false);
+        isSimulationRunning = false;
+        simulationStatusMessage = "Simulazione fermata.";
+        latestFlowResults.Clear();
+
+        if (finalResults != null)
+        {
+            AnalysisState.AddNormalConditionFlowResults(selectedRoutingAlgorithm, finalResults.PerFlowStats);
+            simulationStats = finalResults.AggregateStats;
+        }
+
+        JSRuntime.InvokeVoidAsync("networkGraph.resetHighlights");
+        isBusy = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Chiamato dal pannello quando l'utente clicca "Salva Modifiche".
+    /// Aggiorna la visualizzazione del grafo.
+    /// </summary>
+    private async Task HandleItemUpdate(object item)
+    {
+        if (item is Node updatedNode)
+        {
+            await JSRuntime.InvokeVoidAsync("networkGraph.updateNode", new
+            {
+                id = updatedNode.Id,
+                label = updatedNode.Label,
+                type = updatedNode.Type.ToString()
+            });
+        }
+        else if (item is Link updatedLink)
+        {
+            string displayLabel = $"L:{updatedLink.Latency} B:{updatedLink.Bandwidth}";
+            await JSRuntime.InvokeVoidAsync("networkGraph.updateLink", updatedLink.Id, displayLabel);
+        }
+    }
+
+    /// <summary>
+    /// Chiamato dal pannello quando l'utente clicca "Elimina".
+    /// </summary>
+    private async Task HandleItemDelete(object item)
+    {
+        if (item is Node nodeToDelete)
+        {
+            var linksToRemove = links.Where(l => l.From == nodeToDelete.Id || l.To == nodeToDelete.Id).ToList();
+            foreach (var link in linksToRemove)
+            {
+                links.Remove(link);
+                await JSRuntime.InvokeVoidAsync("networkGraph.removeLink", link.Id);
+                if (isSimulationRunning) SimulationService.NotifyGraphUpdate("removelink", link.Id);
+            }
+            nodes.Remove(nodeToDelete);
+            await JSRuntime.InvokeVoidAsync("networkGraph.removeNode", nodeToDelete.Id);
+            if (isSimulationRunning) SimulationService.NotifyGraphUpdate("removenode", nodeToDelete.Id);
+        }
+        else if (item is Link linkToDelete)
+        {
+            links.Remove(linkToDelete);
+            await JSRuntime.InvokeVoidAsync("networkGraph.removeLink", linkToDelete.Id);
+            if (isSimulationRunning) SimulationService.NotifyGraphUpdate("removelink", linkToDelete.Id);
+        }
+        selectedItem = null;
+        StateHasChanged();
+    }
+
+    private async Task AddNewNode()
+    {
+        var typeAsString = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue", "Tipo di nodo? (Sensor, Gateway, Router, Internet)", "Sensor");
+
+        // Se l'utente ha premuto "Annulla", typeAsString sarà nullo. Interrompiamo l'operazione.
+        if (typeAsString == null)
+        {
+            return;
+        }
+
+        Enum.TryParse(typeof(NodeType), typeAsString, true, out var nodeTypeObj);
+        NodeType nodeType = (NodeType)(nodeTypeObj ?? NodeType.Sensor);
+        var newNode = new Node { Id = nodeCounter.ToString(), Label = $"{nodeType} {nodeCounter}", Type = nodeType };
+        if (nodeType == NodeType.Sensor)
+        {
+            newNode.DataRate = 10;  // Valore di default per la quantità di dati (es. 10 KB/s)
+            newNode.PacketSize = 5;   // Valore di default per la dimensione dei pacchetti (es. 5 KB)
+            newNode.LatencyRequirement = 100; // Valore di default per i requisiti di latenza
+        }
+        nodes.Add(newNode);
+        await JSRuntime.InvokeVoidAsync("networkGraph.addNode", new { id = newNode.Id, label = newNode.Label, type = newNode.Type.ToString() });
+        nodeCounter++;
+    }
+
+    private async Task EnterAddLinkMode()
+    {
+        showAddLinkStatus = true;
+        StateHasChanged();
+        await JSRuntime.InvokeVoidAsync("networkGraph.enterAddLinkMode");
+    }
+
+    [JSInvokable]
+    public async Task CreateLink(string fromNodeId, string toNodeId)
+    {
+        showAddLinkStatus = false;
+
+        var techAsString = await JSRuntime.InvokeAsync<string>("networkGraph.promptForValue",
+        "Tecnologia? (Fiber, DSL, WiFi, FiveG, LoRa, SatelliteLEO, SatelliteGEO, CoreNwk)",
+        "Fiber");
+        Enum.TryParse(typeof(LinkTechnology), techAsString, true, out var techObj);
+        LinkTechnology technology = (LinkTechnology)(techObj ?? LinkTechnology.WiFi);
+
+        var newLink = new Link { Id = $"L{linkCounter++}", From = fromNodeId, To = toNodeId, Technology = technology };
+        AssignDefaultMetrics(newLink);
+        links.Add(newLink);
+
+        await JSRuntime.InvokeVoidAsync("networkGraph.addLink", new { 
+            id = newLink.Id, 
+            from = newLink.From, 
+            to = newLink.To, 
+            label = $"L:{newLink.Latency} B:{newLink.Bandwidth}", 
+            technology = newLink.Technology.ToString() 
+        });
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void HandleNodeClick(string nodeId)
+    {
+        selectedItem = nodes.FirstOrDefault(n => n.Id == nodeId);
+        showAddLinkStatus = false; // Esci dalla modalità "Aggiungi Link"
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task HandleLinkClick(string linkId)
+    {
+        selectedItem = links.FirstOrDefault(l => l.Id == linkId);
+        showAddLinkStatus = false;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void HandleCanvasClick()
+    {
+        selectedItem = null;
+        showAddLinkStatus = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Assegna metriche di performance di default a un link in base alla sua tecnologia,
+    /// utilizzando i valori aggiornati e più granulari.
+    /// </summary>
+    /// <param name="link">Il collegamento da configurare.</param>
+    private void AssignDefaultMetrics(Link link)
+    {
+        switch (link.Technology)
+        {
+            // --- TECNOLOGIE CABLATE ---
+            case LinkTechnology.Fiber:
+                link.Latency = Math.Round(random.NextDouble() + 1.0, 2);
+                link.Bandwidth = 1000;
+                link.Reliability = 0.999;
+                break;
+            case LinkTechnology.DSL:
+                link.Latency = Math.Round(random.NextDouble() * 20.0 + 15.0, 2);
+                link.Bandwidth = Math.Round(random.NextDouble() * 180.0 + 20.0, 2);
+                link.Reliability = 0.99;
+                break;
+            // --- TECNOLOGIE WIRELESS A CORTO RAGGIO ---
+            case LinkTechnology.WiFi:
+                link.Latency = Math.Round(random.NextDouble() * 15.0 + 5.0, 2);
+                link.Bandwidth = Math.Round(random.NextDouble() * 500.0 + 100.0, 2);
+                link.Reliability = 0.98;
+                break;
+            // --- TECNOLOGIE MOBILI ---
+            case LinkTechnology.FiveG:
+                link.Latency = Math.Round(random.NextDouble() * 0.15 + 0.85, 2);
+                link.Bandwidth = Math.Round(random.NextDouble() * 900.0 + 100.0, 2);
+                link.Reliability = 0.99;
+                break;
+            // --- TECNOLOGIE IoT ---
+            case LinkTechnology.LoRa:
+                link.Latency = Math.Round(random.NextDouble() * 50.0 + 50.0, 2);
+                link.Bandwidth = 0.05;
+                link.Reliability = 0.95;
+                break;
+            // --- TECNOLOGIE SATELLITARI ---
+            case LinkTechnology.SatelliteLEO:
+                link.Latency = Math.Round(random.NextDouble() * 35.0 + 25.0, 2);
+                link.Bandwidth = Math.Round(random.NextDouble() * 200.0 + 50.0, 2);
+                link.Reliability = 0.97;
+                break;
+            case LinkTechnology.SatelliteGEO:
+                link.Latency = Math.Round(random.NextDouble() * 100.0 + 500.0, 2);
+                link.Bandwidth = Math.Round(random.NextDouble() * 80.0 + 20.0, 2);
+                link.Reliability = 0.96;
+                break;
+            // --- DORSALE DI RETE ---
+            case LinkTechnology.CoreNwk:
+                link.Latency = 5;
+                link.Bandwidth = 10000; // Banda molto alta per la dorsale
+                link.Reliability = 0.9999;
+                break;
+            // Fallback di default se la tecnologia non è specificata
+            default:
+                link.Latency = 15;
+                link.Bandwidth = 300;
+                link.Reliability = 0.98;
+                break;
+        }
+    }
+
+    private async Task ZoomIn()
+    {
+        await JSRuntime.InvokeVoidAsync("networkGraph.zoomIn");
+    }
+
+    private async Task ZoomOut()
+    {
+        await JSRuntime.InvokeVoidAsync("networkGraph.zoomOut");
+    }
+
+    private void OnLinkFailureEnabledChanged()
+    {
+        // Ogni volta che il checkbox del guasto cambia, puliamo i risultati precedenti.
+        AnalysisState.ClearLinkFailureResults();
+    }
+}

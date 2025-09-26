@@ -1,0 +1,275 @@
+﻿@using NetworkSimulator.Desktop.Services
+@using NetworkSimulator.Shared
+@using System.Text.Json
+@inject AnalysisStateService AnalysisState
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<button class="btn btn-secondary btn-sm mb-3" @onclick="ClearResults">Azzera Risultati Analisi</button>
+
+<!-- Caso di Studio 1: Condizioni Normali -->
+<div class="card mb-3">
+    <div class="card-header"><h6>Caso di Studio 1: Condizioni Normali</h6></div>
+    <div class="card-body">
+        <p class="small text-muted">Esegui una simulazione completa per ogni algoritmo per popolare la tabella.</p>
+        <h6 class="mt-3">Dijkstra (Baseline)</h6>
+        @if (AnalysisState.NormalConditionFlowResults.TryGetValue("Dijkstra", out var dijkstraFlows) && dijkstraFlows.Any())
+        {
+            <table class="table table-sm table-bordered">
+                <thead>
+                    <tr>
+                        <th>Sorgente</th>
+                        <th>Percorso Calcolato</th>
+                        <th>Tasso Consegna (%)</th>
+                        <th>Latenza Media (ms)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var flow in dijkstraFlows)
+                    {
+                        <tr>
+                            <td>@GetNodeLabel(flow.SourceNodeId)</td>
+                            <td>@string.Join(" → ", flow.FinalPath.Select(nodeId => GetNodeLabel(nodeId)))</td>
+                            <td>@flow.DeliveryRate.ToString("F2")%</td>
+                            <td>@flow.AverageLatency.ToString("F0") ms</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p class="small text-muted fst-italic">Nessun dato disponibile per Dijkstra.</p>
+        }
+        <h6 class="mt-4">AI (Q-Learning)</h6>
+        @if (AnalysisState.NormalConditionFlowResults.TryGetValue("AI", out var aiFlows) && aiFlows.Any())
+        {
+            <table class="table table-sm table-bordered">
+                <thead>
+                    <tr>
+                        <th>Sorgente</th>
+                        <th>Percorso Calcolato</th>
+                        <th>Tasso Consegna (%)</th>
+                        <th>Latenza Media (ms)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var flow in aiFlows)
+                    {
+                        <tr>
+                            <td>@GetNodeLabel(flow.SourceNodeId)</td>
+                            <td>@string.Join(" → ", flow.FinalPath.Select(nodeId => GetNodeLabel(nodeId)))</td>
+                            <td>@flow.DeliveryRate.ToString("F2")%</td>
+                            <td>@flow.AverageLatency.ToString("F0") ms</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p class="small text-muted fst-italic">Nessun dato disponibile per l'AI.</p>
+        }
+    </div>
+</div>
+
+<!-- Caso di Studio 2: Guasto di un Link -->
+<div class="card mb-3">
+    <div class="card-header"><h6>Caso di Studio 2: Guasto di un Link (Link Failure)</h6></div>
+    <div class="card-body">
+        <p class="small text-muted">Esegui lo scenario di guasto per ogni algoritmo per popolare il grafico. I dati vengono aggiunti in tempo reale.</p>
+        <canvas id="linkFailureChart"></canvas>
+        @if (AnalysisState.LinkFailureFlowResults.Values.Any(flowDict => flowDict.Any()))
+        {
+            <div class="table-responsive mt-3">
+                <table class="table table-sm table-bordered text-center align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Serie</th>
+                            @foreach (var timePoint in AnalysisState.LinkFailureFlowResults.First().Value.First().Value)
+                            {
+                                <th>@timePoint.Time s</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var algEntry in AnalysisState.LinkFailureFlowResults.ToList())
+                        {
+                            @foreach (var flowEntry in algEntry.Value.ToList())
+                            {
+                                <tr>
+                                    <td class="fw-bold text-start ps-2">@algEntry.Key - @GetNodeLabel(flowEntry.Key)</td>
+                                    @foreach (var dataPoint in flowEntry.Value)
+                                    {
+                                        <td>@dataPoint.DeliveryRate.ToString("F2")</td>
+                                    }
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="text-center text-muted fst-italic py-5">
+                <p>Nessun dato disponibile.<br>Abilita lo scenario di guasto nel pannello "Controllo Simulazione" prima di avviare una simulazione per vedere i risultati.</p>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Caso di Studio 3: Congestione -->
+<div class="card">
+    <div class="card-header"><h6>Caso di Studio 3: Congestione</h6></div>
+    <div class="card-body">
+        <p class="small text-muted">Questa sezione è predisposta per future analisi sulla congestione di rete.</p>
+        <canvas id="congestionChart"></canvas>
+        @if (AnalysisState.CongestionTestResults.Values.Any(flowDict => flowDict.Any()))
+        {
+            <div class="table-responsive mt-3">
+                <table class="table table-sm table-bordered text-center align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Serie</th>
+                            @foreach (var timePoint in AnalysisState.CongestionTestResults.First().Value.First().Value)
+                            {
+                                <th>@timePoint.Time s</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var algEntry in AnalysisState.CongestionTestResults.ToList())
+                        {
+                            @foreach (var flowEntry in algEntry.Value.ToList())
+                            {
+                                <tr>
+                                    <td class="fw-bold text-start ps-2">@algEntry.Key - @GetNodeLabel(flowEntry.Key)</td>
+                                    @foreach (var dataPoint in flowEntry.Value)
+                                    {
+                                        <td>@dataPoint.AverageLatency.ToString("F0")</td>
+                                    }
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="text-center text-muted fst-italic py-5">
+                <p>Nessun dato disponibile.<br>Abilita lo scenario di congestione nel pannello "Controllo Simulazione" prima di avviare una simulazione per vedere i risultati.</p>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public List<Node> AllNodes { get; set; } = new List<Node>();
+
+    private string GetNodeLabel(string nodeId)
+    {
+        return AllNodes.FirstOrDefault(n => n.Id == nodeId)?.Label ?? nodeId;
+    }
+
+    protected override void OnInitialized()
+    {
+        // Si iscrive all'evento di cambiamento dello stato.
+        AnalysisState.OnChange += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Aggiorna il grafico ogni volta che i dati cambiano
+        await UpdateLinkFailureChart();
+        await UpdateCongestionChart();
+    }
+
+    private async Task UpdateLinkFailureChart()
+    {
+        // Prepara i dati per il grafico, creando una serie per ogni algoritmo
+        var datasets = new List<object>();
+        var labels = new List<string>();
+
+        // Lista di colori per distinguere le linee dei diversi flussi
+        var flowColors = new[] { "rgb(255, 99, 132)", "rgb(54, 162, 235)", "rgb(255, 206, 86)", "rgb(75, 192, 192)", "rgb(153, 102, 255)", "rgb(255, 159, 64)" };
+        int colorIndex = 0;
+
+        // Itera su ogni algoritmo (Dijkstra, AI)
+        foreach (var algEntry in AnalysisState.LinkFailureFlowResults)
+        {
+            var algorithmName = algEntry.Key;
+            var flows = algEntry.Value;
+
+            // Itera su ogni flusso (sensore) per quell'algoritmo
+            foreach (var flowEntry in flows)
+            {
+                var sourceId = flowEntry.Key;
+                var dataPoints = flowEntry.Value;
+
+                if (!dataPoints.Any()) continue;
+
+                // Estrae le etichette del tempo (asse X) una sola volta
+                if (!labels.Any())
+                {
+                    labels = dataPoints.Select(d => d.Time + "s").ToList();
+                }
+
+                datasets.Add(new
+                {
+                    label = $"{algorithmName} - {GetNodeLabel(sourceId)}", // Es. "Dijkstra - Sensor (Traffic)"
+                    data = dataPoints.Select(d => d.DeliveryRate),
+                    borderColor = flowColors[colorIndex % flowColors.Length],
+                    backgroundColor = flowColors[colorIndex % flowColors.Length],
+                    tension = 0.1
+                });
+                colorIndex++;
+            }
+        }
+
+        await JSRuntime.InvokeVoidAsync("chartInterop.createOrUpdateChart", "linkFailureChart", labels, datasets, "Tempo di Simulazione (s)", "Tasso di Consegna (%)");
+    }
+
+    private async Task UpdateCongestionChart()
+    {
+        var datasets = new List<object>();
+        var labels = new List<string>();
+
+        var flowColors = new[] { "rgb(153, 102, 255)", "rgb(255, 159, 64)", "rgb(255, 99, 132)", "rgb(54, 162, 235)", "rgb(255, 206, 86)", "rgb(75, 192, 192)" };
+        int colorIndex = 0;
+
+        foreach (var algEntry in AnalysisState.CongestionTestResults)
+        {
+            foreach (var flowEntry in algEntry.Value)
+            {
+                if (!flowEntry.Value.Any()) continue;
+
+                if (!labels.Any())
+                {
+                    labels = flowEntry.Value.Select(d => d.Time + "s").ToList();
+                }
+
+                datasets.Add(new
+                {
+                    label = $"{algEntry.Key} - Latenza {GetNodeLabel(flowEntry.Key)}",
+                    data = flowEntry.Value.Select(d => d.AverageLatency),
+                    borderColor = flowColors[colorIndex % flowColors.Length],
+                    backgroundColor = flowColors[colorIndex % flowColors.Length],
+                    tension = 0.1
+                });
+                colorIndex++;
+            }
+        }
+
+        await JSRuntime.InvokeVoidAsync("chartInterop.createOrUpdateChart", "congestionChart", labels, datasets, "Tempo di Simulazione (s)", "Latenza Media (ms)");
+    }
+
+    private void ClearResults() => AnalysisState.Clear();
+
+    public void Dispose()
+    {
+        AnalysisState.OnChange -= StateHasChanged;
+    }
+}

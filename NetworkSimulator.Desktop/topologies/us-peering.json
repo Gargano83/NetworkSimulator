@@ -1,0 +1,97 @@
+{
+  "nodes": [
+    {
+      "id": "1",
+      "label": "Sensor (Seattle)",
+      "type": "Sensor",
+      "dataRate": 100,
+      "packetSize": 50
+    },
+    {
+      "id": "2",
+      "label": "Router (Seattle)",
+      "type": "Router"
+    },
+    {
+      "id": "3",
+      "label": "Router (Chicago)",
+      "type": "Router"
+    },
+    {
+      "id": "4",
+      "label": "Router (New York)",
+      "type": "Router"
+    },
+    {
+      "id": "5",
+      "label": "Router (Ashburn)",
+      "type": "Router"
+    },
+    {
+      "id": "6",
+      "label": "Router (Atlanta)",
+      "type": "Router"
+    },
+    {
+      "id": "7",
+      "label": "Internet",
+      "type": "Internet"
+    }
+  ],
+  "links": [
+    {
+      "id": "L1",
+      "from": "1",
+      "to": "2",
+      "technology": "FiveG"
+    },
+    {
+      "id": "L2",
+      "from": "2",
+      "to": "3",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L3",
+      "from": "2",
+      "to": "6",
+      "technology": "SatelliteLEO"
+    },
+    {
+      "id": "L4",
+      "from": "3",
+      "to": "4",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L5",
+      "from": "3",
+      "to": "6",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L6",
+      "from": "4",
+      "to": "5",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L7",
+      "from": "5",
+      "to": "7",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L8",
+      "from": "6",
+      "to": "7",
+      "technology": "CoreNwk"
+    },
+    {
+      "id": "L9",
+      "from": "4",
+      "to": "6",
+      "technology": "CoreNwk"
+    }
+  ]
+}

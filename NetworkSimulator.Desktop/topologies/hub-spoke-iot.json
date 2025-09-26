@@ -1,0 +1,78 @@
+{
+  "nodes": [
+    {
+      "id": "1",
+      "label": "Sensor (Traffic)",
+      "type": "Sensor",
+      "dataRate": 5,
+      "packetSize": 2
+    },
+    {
+      "id": "2",
+      "label": "Sensor (Weather)",
+      "type": "Sensor",
+      "dataRate": 2,
+      "packetSize": 1
+    },
+    {
+      "id": "3",
+      "label": "Sensor (Parking)",
+      "type": "Sensor",
+      "dataRate": 10,
+      "packetSize": 1
+    },
+    {
+      "id": "4",
+      "label": "LoRa Gateway (Hub)",
+      "type": "Gateway"
+    },
+    {
+      "id": "5",
+      "label": "Core Router",
+      "type": "Router"
+    },
+    {
+      "id": "6",
+      "label": "Internet",
+      "type": "Internet"
+    }
+  ],
+  "links": [
+    {
+      "id": "L1",
+      "from": "1",
+      "to": "4",
+      "technology": "LoRa"
+    },
+    {
+      "id": "L2",
+      "from": "2",
+      "to": "4",
+      "technology": "LoRa"
+    },
+    {
+      "id": "L3",
+      "from": "3",
+      "to": "4",
+      "technology": "LoRa"
+    },
+    {
+      "id": "L4",
+      "from": "4",
+      "to": "5",
+      "technology": "Fiber"
+    },
+    {
+      "id": "L5",
+      "from": "4",
+      "to": "5",
+      "technology": "FiveG"
+    },
+    {
+      "id": "L6",
+      "from": "5",
+      "to": "6",
+      "technology": "CoreNwk"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+﻿@using NetworkSimulator.Shared
+
+<div class="card bg-light mt-3">
+    <div class="card-header">
+        <strong>Riepilogo Calcolo Percorso</strong>
+    </div>
+    <div class="card-body">
+        <p class="card-text mb-1">
+            <strong>Algoritmo:</strong>
+            <span class="badge bg-primary">@AlgorithmName</span>
+        </p>
+        <p class="card-text mb-1">
+            <strong>Metrica di Ottimizzazione:</strong>
+            <span class="text-capitalize">@Metric</span>
+        </p>
+        <hr />
+        @if (FlowResults != null && FlowResults.Any())
+        {
+            <table class="table table-sm table-borderless small">
+                <thead>
+                    <tr>
+                        <th>Sorgente</th>
+                        <th>Percorso Scelto (@Metric)</th>
+                        <th class="text-end">Costo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var flow in FlowResults)
+                    {
+                        <tr>
+                            <td>@GetNodeLabel(flow.SourceId)</td>
+                            <td><code>@GetPathWithLabels(flow.Path)</code></td>
+                            <td class="text-end fw-bold text-success">@flow.TotalCost.ToString("F2")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p class="text-muted">Nessun flusso di dati attivo.</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public List<FlowResult> FlowResults { get; set; } = new List<FlowResult>();
+
+    [Parameter]
+    public string AlgorithmName { get; set; } = "N/D";
+
+    [Parameter]
+    public string Metric { get; set; } = "N/D";
+
+    /// <summary>
+    /// NUOVO: Riceve la lista completa di tutti i nodi della topologia.
+    /// </summary>
+    [Parameter]
+    public List<Node> AllNodes { get; set; } = new List<Node>();
+
+    private string GetNodeLabel(string nodeId) => AllNodes.FirstOrDefault(n => n.Id == nodeId)?.Label ?? nodeId;
+    private string GetPathWithLabels(List<string> path) => path == null ? "N/A" : string.Join(" → ", path.Select(GetNodeLabel));
+}
