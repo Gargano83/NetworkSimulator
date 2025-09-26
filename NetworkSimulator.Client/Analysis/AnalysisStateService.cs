@@ -32,6 +32,7 @@ namespace NetworkSimulator.Client.Analysis
         public Dictionary<string, Dictionary<string, List<LatencyDataPoint>>> CongestionTestResults { get; set; } = new();
 
         public bool IsCongestionTestRunning { get; private set; } = false;
+        public bool IsLinkFailureTestRunning { get; private set; } = false;
 
         public event Action? OnChange;
 
@@ -52,14 +53,17 @@ namespace NetworkSimulator.Client.Analysis
             // Itera su ogni flusso per aggiornare entrambi i set di dati
             foreach (var flowStat in liveStats)
             {
-                // -- Dati per il Grafico 2: Tasso di Consegna --
-                if (!LinkFailureFlowResults[algorithmName].ContainsKey(flowStat.SourceNodeId))
-                    LinkFailureFlowResults[algorithmName][flowStat.SourceNodeId] = new List<TimeSeriesDataPoint>();
+                if (IsLinkFailureTestRunning)
+                {
+                    // -- Dati per il Grafico 2: Tasso di Consegna --
+                    if (!LinkFailureFlowResults[algorithmName].ContainsKey(flowStat.SourceNodeId))
+                        LinkFailureFlowResults[algorithmName][flowStat.SourceNodeId] = new List<TimeSeriesDataPoint>();
 
-                double deliveryRate = (flowStat.PacketsGenerated > 0) ? ((double)flowStat.PacketsDelivered / flowStat.PacketsGenerated) * 100 : 0;
-                var deliveryDataPoints = LinkFailureFlowResults[algorithmName][flowStat.SourceNodeId];
-                if (!deliveryDataPoints.Any(p => p.Time == time))
-                    deliveryDataPoints.Add(new TimeSeriesDataPoint { Time = time, DeliveryRate = deliveryRate });
+                    double deliveryRate = (flowStat.PacketsGenerated > 0) ? ((double)flowStat.PacketsDelivered / flowStat.PacketsGenerated) * 100 : 0;
+                    var deliveryDataPoints = LinkFailureFlowResults[algorithmName][flowStat.SourceNodeId];
+                    if (!deliveryDataPoints.Any(p => p.Time == time))
+                        deliveryDataPoints.Add(new TimeSeriesDataPoint { Time = time, DeliveryRate = deliveryRate });
+                }
 
                 if (IsCongestionTestRunning)
                 {
@@ -82,9 +86,20 @@ namespace NetworkSimulator.Client.Analysis
             NotifyStateChanged(); // Notifica la UI per aggiornare il grafico
         }
 
+        public void ClearLinkFailureResults()
+        {
+            LinkFailureFlowResults.Clear();
+            NotifyStateChanged(); // Notifica la UI per aggiornare il grafico
+        }
+
         public void SetCongestionTestStatus(bool isRunning)
         {
             IsCongestionTestRunning = isRunning;
+        }
+
+        public void SetLinkFailureTestStatus(bool isRunning)
+        {
+            IsLinkFailureTestRunning = isRunning;
         }
 
         public void Clear()
@@ -92,6 +107,7 @@ namespace NetworkSimulator.Client.Analysis
             NormalConditionFlowResults.Clear();
             LinkFailureFlowResults.Clear();
             CongestionTestResults.Clear();
+            IsLinkFailureTestRunning = false;
             IsCongestionTestRunning = false;
             NotifyStateChanged();
         }

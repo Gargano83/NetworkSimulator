@@ -92,6 +92,58 @@
 
                                 <hr class="my-3">
                                 <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="failureSwitch"
+                                           checked="@linkFailureEnabled"
+                                           @onchange="(ChangeEventArgs e) => { linkFailureEnabled = (bool)e.Value; OnLinkFailureEnabledChanged(); }"
+                                           disabled="@isSimulationRunning">
+                                    <label class="form-check-label" for="failureSwitch"><strong>Abilita Scenario di Guasto</strong></label>
+                                </div>
+
+                                @if (linkFailureEnabled)
+                                {
+                                    <div class="row g-2 mt-2 align-items-end">
+                                        <div class="col-md-4">
+                                            <label class="form-label small mb-1">Tipo di Guasto:</label>
+                                            <div class="form-control form-control-sm" style="padding-top: 0.4rem;">
+                                                <div class="form-check form-check-inline">
+                                                    <input class="form-check-input" type="radio" name="failureTypeRadio" id="radioLink" value="link" checked="@(failureType == "link")" @onchange="@(() => failureType = "link")" />
+                                                    <label class="form-check-label small" for="radioLink">Link</label>
+                                                </div>
+                                                <div class="form-check form-check-inline">
+                                                    <input class="form-check-input" type="radio" name="failureTypeRadio" id="radioNode" value="node" checked="@(failureType == "node")" @onchange="@(() => failureType = "node")" />
+                                                    <label class="form-check-label small" for="radioNode">Nodo</label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-5">
+                                            <label class="form-label small mb-1">Elemento da Rimuovere:</label>
+                                            <select class="form-select form-select-sm" @bind="failureTargetId" disabled="@isSimulationRunning">
+                                                <option value="">Seleziona un elemento...</option>
+                                                @if (failureType == "link")
+                                                {
+                                                    @foreach (var link in links)
+                                                    {
+                                                        <option value="@link.Id">@link.Id (L:@link.Latency B:@link.Bandwidth)</option>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var node in nodes)
+                                                    {
+                                                        <option value="@node.Id">@node.Label</option>
+                                                    }
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small mb-1">Tempo Innesco (s):</label>
+                                            <input type="number" class="form-control form-control-sm" @bind="failureTime" disabled="@isSimulationRunning" />
+                                        </div>
+                                    </div>
+                                }
+
+                                <hr class="my-3">
+                                <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" role="switch" id="congestionSwitch" @bind="congestionEnabled" disabled="@isSimulationRunning">
                                     <label class="form-check-label" for="congestionSwitch"><strong>Abilita Scenario di Congestione</strong></label>
                                 </div>
@@ -228,6 +280,13 @@
     private double congestionValue = 500; // Default: +500 ms
     // --- FINE NUOVE VARIABILI ---
 
+    // --- NUOVE VARIABILI PER LO SCENARIO DI GUASTO ---
+    private bool linkFailureEnabled = false;
+    private string failureType = "link"; // Valore di default
+    private string? failureTargetId;
+    private int failureTime = 25; // Default: 25 secondi
+    // --- FINE NUOVE VARIABILI ---
+
     /// <summary>
     /// All'avvio del componente, inizializza la connessione SignalR.
     /// </summary>
@@ -277,6 +336,18 @@
             AnalysisState.AddLiveSimulationData(selectedRoutingAlgorithm, time, statsList);
 
             StateHasChanged();
+        });
+
+        hubConnection.On<string, string>("RemoveNetworkElement", (elementType, elementId) =>
+        {
+            if (elementType == "node")
+            {
+                JSRuntime.InvokeVoidAsync("networkGraph.removeNode", elementId);
+            }
+            else if (elementType == "link")
+            {
+                JSRuntime.InvokeVoidAsync("networkGraph.removeLink", elementId);
+            }
         });
 
         await hubConnection.StartAsync();
@@ -372,6 +443,7 @@
         eventLogMessages.Clear();   // Pulisce il log precedente
         liveStatsMessages.Clear();
         AnalysisState.SetCongestionTestStatus(congestionEnabled);
+        AnalysisState.SetLinkFailureTestStatus(linkFailureEnabled);
         isBusy = true;
         simulationStatusMessage = "Avvio della simulazione in corso...";
 
@@ -387,6 +459,12 @@
             AnalysisState.LinkFailureFlowResults.Remove("AI");
         }
 
+        // Se lo scenario di guasto NON è abilitato, assicurati che i suoi dati siano vuoti
+        if (!linkFailureEnabled)
+        {
+            AnalysisState.ClearLinkFailureResults();
+        }
+
         // Se lo scenario di congestione NON è abilitato, assicurati che i suoi dati siano vuoti
         if (!congestionEnabled)
         {
@@ -399,6 +477,10 @@
         if (congestionEnabled && !string.IsNullOrEmpty(congestionLinkId))
         {
             apiUrl += $"&congestedLinkId={congestionLinkId}&congestionTime={congestionTime}&congestionValue={congestionValue}";
+        }
+        if (linkFailureEnabled && !string.IsNullOrEmpty(failureTargetId))
+        {
+            apiUrl += $"&failureType={failureType}&failureTargetId={failureTargetId}&failureTime={failureTime}";
         }
         var response = await Http.PostAsJsonAsync(apiUrl, graphData);
 
@@ -667,6 +749,12 @@
     private async Task ZoomOut()
     {
         await JSRuntime.InvokeVoidAsync("networkGraph.zoomOut");
+    }
+
+    private void OnLinkFailureEnabledChanged()
+    {
+        // Ogni volta che il checkbox del guasto cambia, puliamo i risultati precedenti.
+        AnalysisState.ClearLinkFailureResults();
     }
 
     /// <summary>

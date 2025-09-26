@@ -24,13 +24,18 @@ namespace NetworkSimulator.Server.Controllers
                                              [FromQuery] string metric = "latency",
                                              [FromQuery] string? congestedLinkId = null,
                                              [FromQuery] int congestionTime = 0,
-                                             [FromQuery] double congestionValue = 0)
+                                             [FromQuery] double congestionValue = 0,
+                                             [FromQuery] string? failureType = null, // "node" o "link"
+                                             [FromQuery] string? failureTargetId = null,
+                                             [FromQuery] int failureTime = 0)
         {
             if (graph == null || graph.Nodes.Count == 0)
             {
                 return BadRequest("La topologia della rete non può essere vuota.");
             }
-            _simulationService.StartSimulation(graph, routingAlgorithm, metric, congestedLinkId, congestionTime, congestionValue);
+            _simulationService.StartSimulation(graph, routingAlgorithm, metric, 
+                congestedLinkId, congestionTime, congestionValue,
+                failureType, failureTargetId, failureTime);
             return Ok("Simulazione avviata.");
         }
 

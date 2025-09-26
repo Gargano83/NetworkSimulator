@@ -79,7 +79,7 @@
     <div class="card-body">
         <p class="small text-muted">Esegui lo scenario di guasto per ogni algoritmo per popolare il grafico. I dati vengono aggiunti in tempo reale.</p>
         <canvas id="linkFailureChart"></canvas>
-        @if (AnalysisState.LinkFailureFlowResults.Any())
+        @if (AnalysisState.LinkFailureFlowResults.Values.Any(flowDict => flowDict.Any()))
         {
             <div class="table-responsive mt-3">
                 <table class="table table-sm table-bordered text-center align-middle">
@@ -108,6 +108,12 @@
                         }
                     </tbody>
                 </table>
+            </div>
+        }
+        else
+        {
+            <div class="text-center text-muted fst-italic py-5">
+                <p>Nessun dato disponibile.<br>Abilita lo scenario di guasto nel pannello "Controllo Simulazione" prima di avviare una simulazione per vedere i risultati.</p>
             </div>
         }
     </div>

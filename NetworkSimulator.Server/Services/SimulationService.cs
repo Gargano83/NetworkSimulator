@@ -29,6 +29,11 @@ namespace NetworkSimulator.Server.Services
         private double _congestionValue;
         private bool _congestionApplied = false;
 
+        private string? _failureType;
+        private string? _failureTargetId;
+        private int _failureTime;
+        private bool _failureApplied = false;
+
         /// <summary>
         /// Costruttore che riceve il contesto dell'Hub SignalR per poter comunicare con i client.
         /// </summary>
@@ -40,7 +45,8 @@ namespace NetworkSimulator.Server.Services
         }
 
         public void StartSimulation(GraphData graph, string routingAlgorithm, string metric,
-                                    string? congestedLinkId, int congestionTime, double congestionValue)
+                                    string? congestedLinkId, int congestionTime, double congestionValue,
+                                    string? failureType, string? failureTargetId, int failureTime)
         {
             if (IsRunning) return;
             _networkGraph = graph;
@@ -55,6 +61,11 @@ namespace NetworkSimulator.Server.Services
             _congestionTime = congestionTime;
             _congestionValue = congestionValue;
             _congestionApplied = false; // Resetta lo stato ad ogni avvio
+
+            _failureType = failureType;
+            _failureTargetId = failureTargetId;
+            _failureTime = failureTime;
+            _failureApplied = false; // Resetta lo stato ad ogni avvio
 
             _timer = new Timer(SimulationStep, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
             Console.WriteLine("Simulazione avviata.");
@@ -72,6 +83,34 @@ namespace NetworkSimulator.Server.Services
             if (!IsRunning || _networkGraph == null) return;
             _simulationTime++;
             Console.WriteLine($"--- Simulation Tick: {_simulationTime}s ---");
+
+            // --- LOGICA PER LA GESTIONE DEL GUASTO ---
+            if (!_failureApplied && !string.IsNullOrEmpty(_failureTargetId) && _simulationTime >= _failureTime)
+            {
+                string logMessage = "";
+                if (_failureType == "node")
+                {
+                    _networkGraph.Links.RemoveAll(l => l.From == _failureTargetId || l.To == _failureTargetId);
+                    _networkGraph.Nodes.RemoveAll(n => n.Id == _failureTargetId);
+                    logMessage = $"[{_simulationTime}s] SCENARIO: Guasto del nodo {_failureTargetId}. Rimosso dalla topologia.";
+                }
+                else if (_failureType == "link")
+                {
+                    _networkGraph.Links.RemoveAll(l => l.Id == _failureTargetId);
+                    logMessage = $"[{_simulationTime}s] SCENARIO: Guasto del link {_failureTargetId}. Rimosso dalla topologia.";
+                }
+
+                if (!string.IsNullOrEmpty(logMessage))
+                {
+                    _hubContext.Clients.All.SendAsync("LogEvent", logMessage);
+                    Console.WriteLine(logMessage);
+
+                    // --- NUOVA RIGA: Invia il comando di rimozione al frontend ---
+                    _hubContext.Clients.All.SendAsync("RemoveNetworkElement", _failureType, _failureTargetId);
+                }
+                _failureApplied = true;
+            }
+            // --- FINE LOGICA GESTIONE DEL GUASTO ---
 
             // --- APPLICA LA CONGESTIONE AL MOMENTO GIUSTO ---
             if (!_congestionApplied && !string.IsNullOrEmpty(_congestedLinkId) && _simulationTime >= _congestionTime)
