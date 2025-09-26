@@ -174,7 +174,13 @@ window.networkGraph = {
     },
 
     // Funzioni helper generiche (aggiornamento, rimozione, prompt)
-    updateNode: function (nodeId, newLabel) { nodes.update({ id: nodeId, label: newLabel }); },
+    updateNode: function (node) {
+        // Richiama la funzione helper esistente per ottenere lo stile corretto (inclusa la nuova icona)
+        const styledNode = getNodeStyle(node);
+
+        // Aggiorna il nodo nel dataset con il nuovo stile completo
+        nodes.update(styledNode);
+    },
     removeNode: function (nodeId) { nodes.remove({ id: nodeId }); },
     updateLink: function (linkId, newLabel) { edges.update({ id: linkId, label: newLabel }); },
     removeLink: function (linkId) { edges.remove({ id: linkId }); },

@@ -403,7 +403,12 @@
     {
         if (item is Node updatedNode)
         {
-            await JSRuntime.InvokeVoidAsync("networkGraph.updateNode", updatedNode.Id, updatedNode.Label);
+            await JSRuntime.InvokeVoidAsync("networkGraph.updateNode", new
+            {
+                id = updatedNode.Id,
+                label = updatedNode.Label,
+                type = updatedNode.Type.ToString()
+            });
         }
         else if (item is Link updatedLink)
         {
