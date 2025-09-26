@@ -89,16 +89,6 @@ window.networkGraph = {
                 dotNetHelper.invokeMethodAsync('HandleCanvasClick');
             }
         });
-
-        // Gestore del doppio click
-        network.on("doubleClick", function (params) {
-            if (params.nodes.length > 0) {
-                dotNetHelper.invokeMethodAsync('HandleNodeDoubleClick', params.nodes[0]);
-            }
-            else if (params.edges.length > 0) {
-                dotNetHelper.invokeMethodAsync('HandleLinkDoubleClick', params.edges[0]);
-            }
-        });
     },
 
     // Funzione chiamata da Blazor per "armare" la modalità
