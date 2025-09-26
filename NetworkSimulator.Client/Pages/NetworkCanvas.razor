@@ -505,6 +505,7 @@
     {
         isBusy = true;
         AnalysisState.SetCongestionTestStatus(false);
+        AnalysisState.SetLinkFailureTestStatus(false);
         simulationStatusMessage = "Arresto della simulazione in corso...";
         var response = await Http.PostAsync("api/simulation/stop", null);
         if (response.IsSuccessStatusCode)
@@ -512,18 +513,16 @@
             isSimulationRunning = false;
             simulationStatusMessage = "Simulazione fermata.";
             latestFlowResults.Clear();
-            var flowStats = await Http.GetFromJsonAsync<List<FlowStats>>("api/simulation/stats");
 
-            if (flowStats != null)
+            // Ricevi l'oggetto che contiene sia i dati aggregati che quelli per-flusso
+            var finalResults = await Http.GetFromJsonAsync<FinalSimulationResults>("api/simulation/stats");
+
+            if (finalResults != null)
             {
-                AnalysisState.AddNormalConditionFlowResults(selectedRoutingAlgorithm, flowStats);
+                AnalysisState.AddNormalConditionFlowResults(selectedRoutingAlgorithm, finalResults.PerFlowStats);
 
-                simulationStats = new SimulationStats
-                {
-                    PacketsGenerated = flowStats.Sum(f => f.PacketsGenerated),
-                    PacketsDelivered = flowStats.Sum(f => f.PacketsDelivered),
-                    AverageLatency = flowStats.Where(f => f.PacketsDelivered > 0).DefaultIfEmpty().Average(f => f?.AverageLatency ?? 0)
-                };
+                // Usa i dati aggregati (calcolati dal server) per il pannello riassuntivo
+                simulationStats = finalResults.AggregateStats;
             }
 
             await JSRuntime.InvokeVoidAsync("networkGraph.resetHighlights");

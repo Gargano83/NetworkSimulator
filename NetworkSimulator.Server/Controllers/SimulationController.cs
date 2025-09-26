@@ -59,9 +59,9 @@ namespace NetworkSimulator.Server.Controllers
         }
 
         [HttpGet("stats")]
-        public ActionResult<List<FlowStats>> GetStats()
+        public ActionResult<FinalSimulationResults> GetStats()
         {
-            return Ok(_simulationService.GetPerFlowStats());
+            return Ok(_simulationService.GetFinalResults());
         }
     }
 }

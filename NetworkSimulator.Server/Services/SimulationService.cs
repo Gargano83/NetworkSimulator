@@ -151,15 +151,36 @@ namespace NetworkSimulator.Server.Services
             }
         }
 
-        /// <summary>
-        /// Nuovo metodo per restituire le statistiche per-flusso
-        /// </summary>
-        /// <returns></returns>
-        public List<FlowStats> GetPerFlowStats()
+        public FinalSimulationResults GetFinalResults()
         {
-            // Ora il metodo deve solo restituire i dati raccolti,
-            // perché il FinalPath è già stato salvato durante la simulazione.
-            return _flowStats.Values.ToList();
+            var perFlowStats = _flowStats.Values.ToList();
+
+            // Calcola i totali aggregati dai dati per-flusso
+            var totalGenerated = perFlowStats.Sum(f => f.PacketsGenerated);
+            var totalDelivered = perFlowStats.Sum(f => f.PacketsDelivered);
+            var totalLatency = perFlowStats.Sum(f => f.TotalLatencySum);
+            var totalDataDelivered = perFlowStats.Sum(f => f.TotalDataDelivered);
+
+            // Calcola il throughput corretto (KB/s)
+            double throughput = 0;
+            if (_simulationTime > 0)
+            {
+                throughput = totalDataDelivered / _simulationTime;
+            }
+
+            var aggregateStats = new SimulationStats
+            {
+                PacketsGenerated = totalGenerated,
+                PacketsDelivered = totalDelivered,
+                AverageLatency = totalDelivered > 0 ? totalLatency / totalDelivered : 0,
+                Throughput = throughput
+            };
+
+            return new FinalSimulationResults
+            {
+                AggregateStats = aggregateStats,
+                PerFlowStats = perFlowStats
+            };
         }
 
         /// <summary>
@@ -294,6 +315,7 @@ namespace NetworkSimulator.Server.Services
                         stats.PacketsDelivered++;
                         // Converte la latenza calcolata (in secondi) in millisecondi prima di sommarla
                         stats.TotalLatencySum += (packet.ArrivalTimeAtCurrentNode - packet.CreationTime) * 1000.0;
+                        stats.TotalDataDelivered += packet.Size;
                         stats.FinalPath = packet.FullPath ?? new List<string>();
                     }
                 }

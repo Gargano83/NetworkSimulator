@@ -10,6 +10,7 @@
         public int PacketsGenerated { get; set; }
         public int PacketsDelivered { get; set; }
         public double TotalLatencySum { get; set; } // Lo usiamo per calcolare la media alla fine
+        public double TotalDataDelivered { get; set; }
 
         // Risultato finale
         public List<string> FinalPath { get; set; } = new List<string>();
