@@ -19,13 +19,18 @@ namespace NetworkSimulator.Server.Controllers
         /// Avvia la simulazione con la topologia di rete fornita.
         /// </summary>
         [HttpPost("start")]
-        public IActionResult StartSimulation([FromBody] GraphData graph, [FromQuery] string routingAlgorithm = "Dijkstra", [FromQuery] string metric = "latency")
+        public IActionResult StartSimulation([FromBody] GraphData graph, 
+                                             [FromQuery] string routingAlgorithm = "Dijkstra", 
+                                             [FromQuery] string metric = "latency",
+                                             [FromQuery] string? congestedLinkId = null,
+                                             [FromQuery] int congestionTime = 0,
+                                             [FromQuery] double congestionValue = 0)
         {
             if (graph == null || graph.Nodes.Count == 0)
             {
                 return BadRequest("La topologia della rete non può essere vuota.");
             }
-            _simulationService.StartSimulation(graph, routingAlgorithm, metric);
+            _simulationService.StartSimulation(graph, routingAlgorithm, metric, congestedLinkId, congestionTime, congestionValue);
             return Ok("Simulazione avviata.");
         }
 

@@ -24,6 +24,11 @@ namespace NetworkSimulator.Server.Services
 
         private ConcurrentDictionary<string, FlowStats> _flowStats;
 
+        private string? _congestedLinkId;
+        private int _congestionTime;
+        private double _congestionValue;
+        private bool _congestionApplied = false;
+
         /// <summary>
         /// Costruttore che riceve il contesto dell'Hub SignalR per poter comunicare con i client.
         /// </summary>
@@ -34,17 +39,24 @@ namespace NetworkSimulator.Server.Services
             _flowStats = new ConcurrentDictionary<string, FlowStats>();
         }
 
-        public void StartSimulation(GraphData graph, string routingAlgorithm, string metric)
+        public void StartSimulation(GraphData graph, string routingAlgorithm, string metric,
+                                    string? congestedLinkId, int congestionTime, double congestionValue)
         {
             if (IsRunning) return;
             _networkGraph = graph;
             _packets.Clear();
             _simulationTime = 0;
             IsRunning = true;
-            _timer = new Timer(SimulationStep, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
             _activeMetric = metric;
             _activeRoutingAlgorithm = routingAlgorithm;
             _flowStats.Clear();
+
+            _congestedLinkId = congestedLinkId;
+            _congestionTime = congestionTime;
+            _congestionValue = congestionValue;
+            _congestionApplied = false; // Resetta lo stato ad ogni avvio
+
+            _timer = new Timer(SimulationStep, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
             Console.WriteLine("Simulazione avviata.");
         }
 
@@ -61,6 +73,23 @@ namespace NetworkSimulator.Server.Services
             _simulationTime++;
             Console.WriteLine($"--- Simulation Tick: {_simulationTime}s ---");
 
+            // --- APPLICA LA CONGESTIONE AL MOMENTO GIUSTO ---
+            if (!_congestionApplied && !string.IsNullOrEmpty(_congestedLinkId) && _simulationTime >= _congestionTime)
+            {
+                var linkToCongest = _networkGraph.Links.FirstOrDefault(l => l.Id == _congestedLinkId);
+                if (linkToCongest != null)
+                {
+                    linkToCongest.Latency += _congestionValue;
+                    _congestionApplied = true;
+
+                    // Invia un log per notificare l'utente
+                    var logMessage = $"[{_simulationTime}s] SCENARIO: Congestione applicata al link {linkToCongest.Id}. Latenza aumentata di {_congestionValue}ms.";
+                    _hubContext.Clients.All.SendAsync("LogEvent", logMessage);
+                    Console.WriteLine(logMessage);
+                }
+            }
+            // --- FINE LOGICA CONGESTIONE ---
+
             UpdateNetworkConditions();
             GenerateTraffic();
             RouteAndMovePackets();
@@ -74,10 +103,10 @@ namespace NetworkSimulator.Server.Services
                 {
                     SourceNodeId = f.SourceNodeId,
                     PacketsGenerated = f.PacketsGenerated,
-                    PacketsDelivered = f.PacketsDelivered
+                    PacketsDelivered = f.PacketsDelivered,
+                    TotalLatencySum = f.TotalLatencySum
                 }).ToList();
 
-                var currentGlobalStats = GetAggregatedStats();
                 // Invia la lista di statistiche al client tramite SignalR
                 _hubContext.Clients.All.SendAsync("UpdateLiveStats", _simulationTime, livePerFlowStats);
             }
@@ -137,23 +166,6 @@ namespace NetworkSimulator.Server.Services
         }
 
         /// <summary>
-        /// Metodo che calcola e restituisce le statistiche live, calcolandole dai dati per-flusso
-        /// </summary>
-        public SimulationStats GetAggregatedStats()
-        {
-            var totalGenerated = _flowStats.Values.Sum(f => f.PacketsGenerated);
-            var totalDelivered = _flowStats.Values.Sum(f => f.PacketsDelivered);
-            var totalLatency = _flowStats.Values.Sum(f => f.TotalLatencySum);
-
-            return new SimulationStats
-            {
-                PacketsGenerated = totalGenerated,
-                PacketsDelivered = totalDelivered,
-                AverageLatency = totalDelivered > 0 ? totalLatency / totalDelivered : 0,
-            };
-        }
-
-        /// <summary>
         /// Genera nuovi pacchetti di dati dai nodi di tipo Sensore.
         /// </summary>
         private void GenerateTraffic()
@@ -176,7 +188,8 @@ namespace NetworkSimulator.Server.Services
                         PathIndex = 0,
                         Size = sensor.PacketSize ?? 1,
                         Priority = sensor.LatencyRequirement < 50 ? 1 : 5,
-                        CreationTime = _simulationTime
+                        CreationTime = _simulationTime,
+                        ArrivalTimeAtCurrentNode = _simulationTime
                     };
 
                     _packets.Add(newPacket);
@@ -228,47 +241,49 @@ namespace NetworkSimulator.Server.Services
         /// </summary>
         private void RouteAndMovePackets()
         {
-            // Modifichiamo la logica di rimozione
+            if (_networkGraph == null) return;
+
+            // 1. Gestisce i pacchetti arrivati a destinazione
             var deliveredPackets = _packets.Where(p => p.CurrentLocationId == p.DestinationId).ToList();
             foreach (var packet in deliveredPackets)
             {
-                // Aggiorna le statistiche per il flusso specifico
-                if (_flowStats.TryGetValue(packet.SourceId, out var stats))
+                // Verifica che il pacchetto sia "arrivato" anche temporalmente
+                if (_simulationTime >= packet.ArrivalTimeAtCurrentNode)
                 {
-                    stats.PacketsDelivered++;
-                    stats.TotalLatencySum += (_simulationTime - packet.CreationTime);
-                    stats.FinalPath = packet.FullPath;
+                    if (_flowStats.TryGetValue(packet.SourceId, out var stats))
+                    {
+                        stats.PacketsDelivered++;
+                        // Converte la latenza calcolata (in secondi) in millisecondi prima di sommarla
+                        stats.TotalLatencySum += (packet.ArrivalTimeAtCurrentNode - packet.CreationTime) * 1000.0;
+                        stats.FinalPath = packet.FullPath ?? new List<string>();
+                    }
                 }
             }
-            _packets.RemoveAll(p => p.CurrentLocationId == p.DestinationId);
+            // Rimuove solo i pacchetti arrivati e processati
+            _packets.RemoveAll(p => deliveredPackets.Contains(p) && _simulationTime >= p.ArrivalTimeAtCurrentNode);
 
-            var lostPackets = _packets.Where(p => p.Ttl <= 0).ToList();
-            if (lostPackets.Any())
-            {
-                // Notifica al log che dei pacchetti sono stati persi
-                _hubContext.Clients.All.SendAsync("LogEvent", $"[{_simulationTime}s] {lostPackets.Count} pacchetti persi (TTL scaduto).");
-                // Rimuovi i pacchetti scaduti dalla simulazione
-                _packets.RemoveAll(p => p.Ttl <= 0);
-            }
+            // 2. Gestisce i pacchetti persi (TTL scaduto)
+            _packets.RemoveAll(p => p.Ttl <= 0);
 
+            // 3. Muove i pacchetti ancora in transito
             foreach (var packet in _packets)
             {
-                if (_networkGraph == null || packet.FullPath == null) continue;
+                // Se il pacchetto non è ancora arrivato (è in transito su un link), non fare nulla per questo tick
+                if (_simulationTime < packet.ArrivalTimeAtCurrentNode)
+                {
+                    continue;
+                }
 
-                // Ad ogni tick, il "tempo di vita" di ogni pacchetto diminuisce.
                 packet.Ttl--;
-
                 string nextHop = packet.CurrentLocationId;
 
-                // 1. DECISIONE DI ROUTING (RISPETTA LA SCELTA DELL'UTENTE)
+                // Logica di routing per decidere il nextHop (invariata)
                 if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
                 {
-                    // --- MODIFICA #3: Chiama il nuovo agente ---
                     nextHop = _routingAgent.ChooseNextHop(_networkGraph, packet.CurrentLocationId, packet.DestinationId);
                 }
-                else // Default: usa Dijkstra
+                else
                 {
-                    // Ricalcola il percorso dalla posizione attuale per reagire ai guasti
                     var pathResult = CalculateDijkstraPath(_networkGraph, packet.CurrentLocationId, packet.DestinationId, _activeMetric);
                     if (pathResult.Path != null && pathResult.Path.Count > 1)
                     {
@@ -276,29 +291,22 @@ namespace NetworkSimulator.Server.Services
                     }
                 }
 
-                // Se il pacchetto non ha trovato una via d'uscita, lo notifichiamo nel log
-                if (nextHop == packet.CurrentLocationId && packet.CurrentLocationId != packet.DestinationId)
-                {
-                    _hubContext.Clients.All.SendAsync("LogEvent", $"[{_simulationTime}s] Pacchetto {packet.Id.ToString().Substring(0, 8)} bloccato in {packet.CurrentLocationId}.");
-                }
-
-                // 2. MOVIMENTO E AGGIORNAMENTO STATO PACCHETTO
+                // Se c'è una mossa da fare...
                 if (nextHop != packet.CurrentLocationId)
                 {
-                    var linkTaken = _networkGraph.Links.FirstOrDefault(l => l.From == packet.CurrentLocationId && l.To == nextHop);
+                    var linkTaken = _networkGraph.Links.FirstOrDefault(l => (l.From == packet.CurrentLocationId && l.To == nextHop) || (l.To == packet.CurrentLocationId && l.From == nextHop));
                     if (linkTaken != null)
                     {
-                        if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
-                        {
-                            // --- MODIFICA #4: Calcola la ricompensa e aggiorna il modello ---
-                            double reward = 100.0 / linkTaken.Latency;
-                            _routingAgent.UpdateModel(packet.CurrentLocationId, nextHop, packet.DestinationId, reward);
-                        }
+                        double delayInSeconds = linkTaken.Latency / 1000.0;
 
-                        packet.FullPath.Add(nextHop);
-                        packet.PathIndex = packet.FullPath.Count - 1;
+                        // Aggiorna la posizione e il nuovo tempo di arrivo
                         packet.PreviousLocationId = packet.CurrentLocationId;
                         packet.CurrentLocationId = nextHop;
+                        packet.ArrivalTimeAtCurrentNode = _simulationTime + delayInSeconds;
+
+                        // CORREZIONE HIGHLIGHTING: Aggiorna il percorso e l'indice
+                        packet.FullPath?.Add(nextHop);
+                        packet.PathIndex = (packet.FullPath?.Count ?? 1) - 1;
                     }
                 }
             }

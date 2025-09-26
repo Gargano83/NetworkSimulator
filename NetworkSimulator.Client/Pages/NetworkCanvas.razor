@@ -90,6 +90,36 @@
                                     </div>
                                 </div>
 
+                                <hr class="my-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="congestionSwitch" @bind="congestionEnabled" disabled="@isSimulationRunning">
+                                    <label class="form-check-label" for="congestionSwitch"><strong>Abilita Scenario di Congestione</strong></label>
+                                </div>
+
+                                @if (congestionEnabled)
+                                {
+                                    <div class="row g-2 mt-2 align-items-center">
+                                        <div class="col-md-5">
+                                            <label class="form-label small mb-0">Link da Congestionare:</label>
+                                            <select class="form-select form-select-sm" @bind="congestionLinkId" disabled="@isSimulationRunning">
+                                                <option value="">Seleziona un link...</option>
+                                                @foreach (var link in links)
+                                                {
+                                                    <option value="@link.Id">@link.Id (L:@link.Latency B:@link.Bandwidth)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label small mb-0">Tempo Innesco (s):</label>
+                                            <input type="number" class="form-control form-control-sm" @bind="congestionTime" disabled="@isSimulationRunning" />
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label small mb-0">Latenza (+ms):</label>
+                                            <input type="number" class="form-control form-control-sm" @bind="congestionValue" disabled="@isSimulationRunning" />
+                                        </div>
+                                    </div>
+                                }
+
                                 @if (!string.IsNullOrEmpty(simulationStatusMessage))
                                 {
                                     <div class="text-muted small mt-3">@simulationStatusMessage</div>
@@ -191,6 +221,13 @@
     private List<string> liveStatsMessages = new List<string>();
     private Random random = new Random();
 
+    // --- NUOVE VARIABILI PER LO SCENARIO DI CONGESTIONE ---
+    private bool congestionEnabled = false;
+    private string? congestionLinkId;
+    private int congestionTime = 20;    // Default: 20 secondi
+    private double congestionValue = 500; // Default: +500 ms
+    // --- FINE NUOVE VARIABILI ---
+
     /// <summary>
     /// All'avvio del componente, inizializza la connessione SignalR.
     /// </summary>
@@ -237,7 +274,7 @@
             if (liveStatsMessages.Count > 50) liveStatsMessages.RemoveAt(50);
 
             // Invia i dati dettagliati al servizio di analisi per il grafico
-            AnalysisState.AddLinkFailureFlowDataPoints(selectedRoutingAlgorithm, time, statsList);
+            AnalysisState.AddLiveSimulationData(selectedRoutingAlgorithm, time, statsList);
 
             StateHasChanged();
         });
@@ -261,6 +298,7 @@
     private async Task LoadTopology()
     {
         if (string.IsNullOrEmpty(selectedTopologyFile)) return;
+        AnalysisState.Clear();
         // Ferma qualsiasi simulazione in corso
         if (isSimulationRunning) await StopSimulation();
 
@@ -349,7 +387,13 @@
         }
 
         var graphData = new GraphData { Nodes = nodes, Links = links };
-        var response = await Http.PostAsJsonAsync($"api/simulation/start?routingAlgorithm={selectedRoutingAlgorithm}&metric={selectedMetric}", graphData);
+        // --- COSTRUISCI L'URL CON I PARAMETRI OPZIONALI ---
+        var apiUrl = $"api/simulation/start?routingAlgorithm={selectedRoutingAlgorithm}&metric={selectedMetric}";
+        if (congestionEnabled && !string.IsNullOrEmpty(congestionLinkId))
+        {
+            apiUrl += $"&congestedLinkId={congestionLinkId}&congestionTime={congestionTime}&congestionValue={congestionValue}";
+        }
+        var response = await Http.PostAsJsonAsync(apiUrl, graphData);
 
         if (response.IsSuccessStatusCode)
         {

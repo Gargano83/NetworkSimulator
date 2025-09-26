@@ -5,5 +5,6 @@
         public string SourceNodeId { get; set; }
         public int PacketsGenerated { get; set; }
         public int PacketsDelivered { get; set; }
+        public double TotalLatencySum { get; set; }
     }
 }

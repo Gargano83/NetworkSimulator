@@ -21,7 +21,7 @@
                         <th>Sorgente</th>
                         <th>Percorso Calcolato</th>
                         <th>Tasso Consegna (%)</th>
-                        <th>Latenza Media (s)</th>
+                        <th>Latenza Media (ms)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -31,7 +31,7 @@
                             <td>@GetNodeLabel(flow.SourceNodeId)</td>
                             <td>@string.Join(" → ", flow.FinalPath.Select(nodeId => GetNodeLabel(nodeId)))</td>
                             <td>@flow.DeliveryRate.ToString("F2")%</td>
-                            <td>@flow.AverageLatency.ToString("F2") s</td>
+                            <td>@flow.AverageLatency.ToString("F0") ms</td>
                         </tr>
                     }
                 </tbody>
@@ -50,7 +50,7 @@
                         <th>Sorgente</th>
                         <th>Percorso Calcolato</th>
                         <th>Tasso Consegna (%)</th>
-                        <th>Latenza Media (s)</th>
+                        <th>Latenza Media (ms)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -60,7 +60,7 @@
                             <td>@GetNodeLabel(flow.SourceNodeId)</td>
                             <td>@string.Join(" → ", flow.FinalPath.Select(nodeId => GetNodeLabel(nodeId)))</td>
                             <td>@flow.DeliveryRate.ToString("F2")%</td>
-                            <td>@flow.AverageLatency.ToString("F2") s</td>
+                            <td>@flow.AverageLatency.ToString("F0") ms</td>
                         </tr>
                     }
                 </tbody>
@@ -118,6 +118,38 @@
     <div class="card-header"><h6>Caso di Studio 3: Congestione</h6></div>
     <div class="card-body">
         <p class="small text-muted">Questa sezione è predisposta per future analisi sulla congestione di rete.</p>
+        <canvas id="congestionChart"></canvas>
+        @if (AnalysisState.CongestionTestResults.Any())
+        {
+            <div class="table-responsive mt-3">
+                <table class="table table-sm table-bordered text-center align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Serie</th>
+                            @foreach (var timePoint in AnalysisState.CongestionTestResults.First().Value.First().Value)
+                            {
+                                <th>@timePoint.Time s</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var algEntry in AnalysisState.CongestionTestResults)
+                        {
+                            @foreach (var flowEntry in algEntry.Value)
+                            {
+                                <tr>
+                                    <td class="fw-bold text-start ps-2">@algEntry.Key - @GetNodeLabel(flowEntry.Key)</td>
+                                    @foreach (var dataPoint in flowEntry.Value)
+                                    {
+                                        <td>@dataPoint.AverageLatency.ToString("F0")</td>
+                                    }
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 </div>
 
@@ -140,6 +172,7 @@
     {
         // Aggiorna il grafico ogni volta che i dati cambiano
         await UpdateLinkFailureChart();
+        await UpdateCongestionChart();
     }
 
     private async Task UpdateLinkFailureChart()
@@ -185,6 +218,40 @@
         }
 
         await JSRuntime.InvokeVoidAsync("chartInterop.createOrUpdateChart", "linkFailureChart", labels, datasets, "Tempo di Simulazione (s)", "Tasso di Consegna (%)");
+    }
+
+    private async Task UpdateCongestionChart()
+    {
+        var datasets = new List<object>();
+        var labels = new List<string>();
+
+        var flowColors = new[] { "rgb(153, 102, 255)", "rgb(255, 159, 64)", "rgb(255, 99, 132)", "rgb(54, 162, 235)", "rgb(255, 206, 86)", "rgb(75, 192, 192)" };
+        int colorIndex = 0;
+
+        foreach (var algEntry in AnalysisState.CongestionTestResults)
+        {
+            foreach (var flowEntry in algEntry.Value)
+            {
+                if (!flowEntry.Value.Any()) continue;
+
+                if (!labels.Any())
+                {
+                    labels = flowEntry.Value.Select(d => d.Time + "s").ToList();
+                }
+
+                datasets.Add(new
+                {
+                    label = $"{algEntry.Key} - Latenza {GetNodeLabel(flowEntry.Key)}",
+                    data = flowEntry.Value.Select(d => d.AverageLatency),
+                    borderColor = flowColors[colorIndex % flowColors.Length],
+                    backgroundColor = flowColors[colorIndex % flowColors.Length],
+                    tension = 0.1
+                });
+                colorIndex++;
+            }
+        }
+
+        await JSRuntime.InvokeVoidAsync("chartInterop.createOrUpdateChart", "congestionChart", labels, datasets, "Tempo di Simulazione (s)", "Latenza Media (ms)");
     }
 
     private void ClearResults() => AnalysisState.Clear();

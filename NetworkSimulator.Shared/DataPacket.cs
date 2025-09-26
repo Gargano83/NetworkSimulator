@@ -55,5 +55,9 @@
         /// Time-To-Live: un contatore per rimuovere i pacchetti bloccati.
         /// </summary>
         public int Ttl { get; set; } = 15; // Un pacchetto "vive" per 15 tick (secondi)
+        /// <summary>
+        /// Memorizza il tempo di simulazione in cui il pacchetto arriverà al nodo corrente.
+        /// </summary>
+        public double ArrivalTimeAtCurrentNode { get; set; }
     }
 }

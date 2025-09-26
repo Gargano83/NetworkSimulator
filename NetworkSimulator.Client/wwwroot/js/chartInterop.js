@@ -32,7 +32,6 @@ window.chartInterop = {
                         },
                         y: {
                             beginAtZero: true,
-                            max: 100,
                             title: { display: true, text: yTitle }
                         }
                     },

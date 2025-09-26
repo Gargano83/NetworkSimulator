@@ -62,8 +62,7 @@ window.networkGraph = {
                 },
                 smooth: {
                     enabled: true,
-                    type: "curvedCW", // Rende i link curvi (senso orario)
-                    roundness: 0.1   // Quanto devono essere curvi
+                    type: "dynamic"
                 },
                 color: {
                     color: '#848484', // Colore grigio di default
