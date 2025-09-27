@@ -5,6 +5,7 @@
     /// </summary>
     public class Node
     {
+        #region Property
         /// <summary>
         /// Identificativo univoco del nodo.
         /// </summary>
@@ -32,5 +33,10 @@
         /// Sarà 'null' se il nodo non è un sensore.
         /// </summary>
         public double? PacketSize { get; set; }
+        #endregion
+
+        #region Method
+        public Node Clone() => (Node)this.MemberwiseClone();
+        #endregion
     }
 }

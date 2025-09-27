@@ -5,6 +5,7 @@
     /// </summary>
     public class Link
     {
+        #region Property
         /// <summary>
         /// Identificativo univoco del collegamento.
         /// </summary>
@@ -33,5 +34,10 @@
         /// L'affidabilità del collegamento, rappresentata come probabilità (da 0.0 a 1.0) che un pacchetto venga trasmesso con successo. 1.0 significa 100% affidabile.
         /// </summary>
         public double Reliability { get; set; } = 1.0;
+        #endregion
+
+        #region Method
+        public Link Clone() => (Link)this.MemberwiseClone();
+        #endregion
     }
 }

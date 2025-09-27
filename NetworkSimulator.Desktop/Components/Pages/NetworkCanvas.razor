@@ -42,6 +42,7 @@
                                         <option value="topologies/global-cdn.json">Rete CDN Globale con Dorsali Ridondanti</option>
                                     </select>
                                     <button class="btn btn-outline-secondary" @onclick="LoadTopology">Carica</button>
+                                    <button class="btn btn-outline-info" @onclick="RestoreTopology" title="Ripristina la topologia al suo stato originale senza cancellare le analisi">Ripristina</button>
                                 </div>
                                 <div class="controls mt-3 d-flex gap-2">
                                     <button class="btn btn-primary" @onclick="AddNewNode" disabled="@isSimulationRunning">Aggiungi Nodo</button>
@@ -249,6 +250,10 @@
     private List<Node> nodes = new List<Node>();
     private List<Link> links = new List<Link>();
 
+    // Liste per la copia originale
+    private List<Node> originalNodes = new List<Node>();
+    private List<Link> originalLinks = new List<Link>();
+
     private bool isSimulationRunning = false;
     private bool isBusy = false;
     private string simulationStatusMessage = "Disegna una rete e premi 'Avvia Simulazione'.";
@@ -384,6 +389,10 @@
                 // Aggiorna lo stato del componente con i nuovi dati
                 nodes = graphData.Nodes;
                 links = graphData.Links;
+
+                // Salva una copia "pulita" e indipendente
+                originalNodes = nodes.Select(n => n.Clone()).ToList();
+                originalLinks = links.Select(l => l.Clone()).ToList();
 
                 // Aggiorna i contatori per evitare ID duplicati se si aggiungono nuovi nodi/link
                 nodeCounter = nodes.Count > 0 ? nodes.Max(n => int.Parse(n.Id)) + 1 : 1;
@@ -714,5 +723,26 @@
     {
         // Ogni volta che il checkbox del guasto cambia, puliamo i risultati precedenti.
         AnalysisState.ClearLinkFailureResults();
+    }
+
+    private async Task RestoreTopology()
+    {
+        if (!originalNodes.Any())
+        {
+            simulationStatusMessage = "Nessuna topologia originale da ripristinare. Caricane una prima.";
+            return;
+        }
+
+        // 1. Ripristina lo stato C# dalla copia originale
+        nodes = originalNodes.Select(n => n.Clone()).ToList();
+        links = originalLinks.Select(l => l.Clone()).ToList();
+
+        // 2. Aggiorna la visualizzazione JS per mostrare la topologia completa
+        var nodesForJs = nodes.Select(n => new { id = n.Id, label = n.Label, type = n.Type.ToString() });
+        var linksForJs = links.Select(l => new { id = l.Id, from = l.From, to = l.To, label = $"L:{l.Latency} B:{l.Bandwidth}", technology = l.Technology.ToString() });
+        await JSRuntime.InvokeVoidAsync("networkGraph.drawTopology", nodesForJs, linksForJs);
+
+        simulationStatusMessage = "Topologia ripristinata allo stato originale.";
+        StateHasChanged();
     }
 }
