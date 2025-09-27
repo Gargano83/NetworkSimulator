@@ -23,13 +23,15 @@
       "id": "L1",
       "from": "1",
       "to": "2",
-      "technology": "LoRa"
+      "technology": "LoRa",
+      "reliability": 0.95
     },
     {
       "id": "L2",
       "from": "2",
       "to": "3",
-      "technology": "Fiber"
+      "technology": "Fiber",
+      "reliability": 0.99
     }
   ]
 }

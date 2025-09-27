@@ -43,61 +43,71 @@
       "id": "L1",
       "from": "1",
       "to": "2",
-      "technology": "DSL"
+      "technology": "DSL",
+      "reliability": 0.98
     },
     {
       "id": "L2",
       "from": "2",
       "to": "3",
-      "technology": "Fiber"
+      "technology": "Fiber",
+      "reliability": 0.99
     },
     {
       "id": "L3",
       "from": "3",
       "to": "4",
-      "technology": "CoreNwk"
+      "technology": "CoreNwk",
+      "reliability": 0.99
     },
     {
       "id": "L4",
       "from": "4",
       "to": "5",
-      "technology": "CoreNwk"
+      "technology": "CoreNwk",
+      "reliability": 0.99
     },
     {
       "id": "L5",
       "from": "5",
       "to": "6",
-      "technology": "CoreNwk"
+      "technology": "CoreNwk",
+      "reliability": 0.99
     },
     {
       "id": "L6",
       "from": "3",
       "to": "5",
-      "technology": "CoreNwk"
+      "technology": "CoreNwk",
+      "reliability": 0.99
     },
     {
       "id": "L7",
       "from": "3",
       "to": "7",
-      "technology": "CoreNwk"
+      "technology": "CoreNwk",
+      "reliability": 0.99
     },
     {
       "id": "L8",
       "from": "5",
       "to": "7",
-      "technology": "CoreNwk"
+      "technology": "CoreNwk",
+      "reliability": 0.99
     },
     {
       "id": "L9",
       "from": "6",
       "to": "7",
-      "technology": "CoreNwk"
+      "technology": "CoreNwk",
+      "reliability": 0.99
     },
     {
       "id": "L10",
       "from": "4",
       "to": "6",
-      "technology": "SatelliteGEO"
+      "technology": "SatelliteGEO",
+      "reliability": 0.96
     }
   ]
 }

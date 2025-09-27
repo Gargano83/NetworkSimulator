@@ -314,6 +314,9 @@ namespace NetworkSimulator.Desktop.Services
         {
             if (_networkGraph == null) return;
 
+            // Usiamo una lista temporanea per gestire tutte le rimozioni in modo sicuro ---
+            var packetsToRemove = new List<DataPacket>();
+
             // 1. Gestisce i pacchetti arrivati a destinazione
             var deliveredPackets = _packets.Where(p => p.CurrentLocationId == p.DestinationId).ToList();
             foreach (var packet in deliveredPackets)
@@ -329,16 +332,20 @@ namespace NetworkSimulator.Desktop.Services
                         stats.TotalDataDelivered += packet.Size;
                         stats.FinalPath = packet.FullPath ?? new List<string>();
                     }
+                    packetsToRemove.Add(packet); // Aggiungi alla lista di rimozione
                 }
             }
-            // Rimuove solo i pacchetti arrivati e processati
-            _packets.RemoveAll(p => deliveredPackets.Contains(p) && _simulationTime >= p.ArrivalTimeAtCurrentNode);
 
-            // 2. Gestisce i pacchetti persi (TTL scaduto)
-            _packets.RemoveAll(p => p.Ttl <= 0);
+            // 2. Gestisce i pacchetti persi per TTL scaduto (logica migliorata)
+            var expiredPackets = _packets.Where(p => p.Ttl <= 0).ToList();
+            if (expiredPackets.Any())
+            {
+                OnLogEvent?.Invoke($"[{_simulationTime}s] {expiredPackets.Count} pacchetti persi (TTL scaduto).");
+                packetsToRemove.AddRange(expiredPackets);
+            }
 
             // 3. Muove i pacchetti ancora in transito
-            foreach (var packet in _packets)
+            foreach (var packet in _packets.Except(packetsToRemove))
             {
                 // Se il pacchetto non è ancora arrivato (è in transito su un link), non fare nulla per questo tick
                 if (_simulationTime < packet.ArrivalTimeAtCurrentNode)
@@ -369,18 +376,43 @@ namespace NetworkSimulator.Desktop.Services
                     var linkTaken = _networkGraph.Links.FirstOrDefault(l => (l.From == packet.CurrentLocationId && l.To == nextHop) || (l.To == packet.CurrentLocationId && l.From == nextHop));
                     if (linkTaken != null)
                     {
-                        double delayInSeconds = linkTaken.Latency / 1000.0;
+                        // Controllo affidabilità e packet loss
+                        if (_random.NextDouble() > linkTaken.Reliability)
+                        {
+                            var logMessage = $"[{_simulationTime}s] PACKET LOSS: Pacchetto da {packet.SourceId} perso sul link {linkTaken.Id} (Affidabilità: {linkTaken.Reliability * 100}%).";
+                            OnLogEvent?.Invoke(logMessage);
+                            Console.WriteLine(logMessage);
 
+                            packetsToRemove.Add(packet); // Segna questo pacchetto per la rimozione
+                            continue; // Salta il resto della logica per questo pacchetto
+                        }
+                        // Controllo affidabilità e packet loss
+
+                        if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // La ricompensa ora è un mix di latenza e affidabilità
+                            double reward = (100.0 / linkTaken.Latency) * linkTaken.Reliability;
+
+                            // Notifica al modello l'esperienza e la sua ricompensa
+                            _routingAgent.UpdateModel(packet.PreviousLocationId, packet.CurrentLocationId, packet.DestinationId, reward);
+                        }
+
+                        double delayInSeconds = linkTaken.Latency / 1000.0;
                         // Aggiorna la posizione e il nuovo tempo di arrivo
                         packet.PreviousLocationId = packet.CurrentLocationId;
                         packet.CurrentLocationId = nextHop;
                         packet.ArrivalTimeAtCurrentNode = _simulationTime + delayInSeconds;
-
                         // CORREZIONE HIGHLIGHTING: Aggiorna il percorso e l'indice
                         packet.FullPath?.Add(nextHop);
                         packet.PathIndex = (packet.FullPath?.Count ?? 1) - 1;
                     }
                 }
+            }
+
+            // Esegue la rimozione sicura di tutti i pacchetti in una sola volta
+            if (packetsToRemove.Any())
+            {
+                _packets.RemoveAll(p => packetsToRemove.Contains(p));
             }
         }
 

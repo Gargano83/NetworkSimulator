@@ -52,49 +52,57 @@
       "id": "L1",
       "from": "1",
       "to": "4",
-      "technology": "WiFi"
+      "technology": "WiFi",
+      "reliability": 0.97
     },
     {
       "id": "L2",
       "from": "2",
       "to": "4",
-      "technology": "WiFi"
+      "technology": "WiFi",
+      "reliability": 0.97
     },
     {
       "id": "L3",
       "from": "3",
       "to": "5",
-      "technology": "Fiber"
+      "technology": "Fiber",
+      "reliability": 0.99
     },
     {
       "id": "L4",
       "from": "4",
       "to": "6",
-      "technology": "Fiber"
+      "technology": "Fiber",
+      "reliability": 0.99
     },
     {
       "id": "L5",
       "from": "5",
       "to": "6",
-      "technology": "Fiber"
+      "technology": "Fiber",
+      "reliability": 0.99
     },
     {
       "id": "L6",
       "from": "6",
       "to": "7",
-      "technology": "CoreNwk"
+      "technology": "CoreNwk",
+      "reliability": 0.99
     },
     {
       "id": "L7",
       "from": "7",
       "to": "8",
-      "technology": "Fiber"
+      "technology": "Fiber",
+      "reliability": 0.99
     },
     {
       "id": "L8",
       "from": "7",
       "to": "8",
-      "technology": "FiveG"
+      "technology": "FiveG",
+      "reliability": 0.98
     }
   ]
 }
