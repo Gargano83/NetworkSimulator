@@ -7,7 +7,7 @@
     public class FlowResult
     {
         public string SourceId { get; set; }
-        public List<string> Path { get; set; }
+        public List<PathSegment> Path { get; set; }
         public double TotalCost { get; set; }
     }
 }

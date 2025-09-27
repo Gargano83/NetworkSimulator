@@ -29,7 +29,7 @@
                     {
                         <tr>
                             <td>@GetNodeLabel(flow.SourceId)</td>
-                            <td><code>@GetPathWithLabels(flow.Path)</code></td>
+                            <td><code>@FormatDetailedPath(flow.Path)</code></td>
                             <td class="text-end fw-bold text-success">@flow.TotalCost.ToString("F2")</td>
                         </tr>
                     }
@@ -60,5 +60,23 @@
     public List<Node> AllNodes { get; set; } = new List<Node>();
 
     private string GetNodeLabel(string nodeId) => AllNodes.FirstOrDefault(n => n.Id == nodeId)?.Label ?? nodeId;
-    private string GetPathWithLabels(List<string> path) => path == null ? "N/A" : string.Join(" → ", path.Select(GetNodeLabel));
+    private string FormatDetailedPath(List<PathSegment> path)
+    {
+        if (path == null || !path.Any())
+        {
+            return "Nessun percorso valido.";
+        }
+
+        var pathString = new System.Text.StringBuilder();
+        // Aggiungi il primo nodo
+        pathString.Append(GetNodeLabel(path.First().StartNodeId));
+
+        // Aggiungi ogni segmento successivo
+        foreach (var segment in path)
+        {
+            pathString.Append($" --[{segment.LinkId}:{segment.LinkTechnology}]--> {GetNodeLabel(segment.EndNodeId)}");
+        }
+
+        return pathString.ToString();
+    }
 }

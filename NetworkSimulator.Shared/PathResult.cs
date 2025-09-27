@@ -10,7 +10,7 @@
         /// Una lista ordinata di stringhe che rappresenta gli ID dei nodi nel percorso calcolato, dal nodo di partenza al nodo di destinazione.
         /// Se non viene trovato alcun percorso, questa lista sarà vuota o null.
         /// </summary>
-        public List<string> Path { get; set; }
+        public List<PathSegment> Path { get; set; }
 
         /// <summary>
         /// La somma totale dei "pesi" (Weight) dei collegamenti che compongono il percorso trovato.

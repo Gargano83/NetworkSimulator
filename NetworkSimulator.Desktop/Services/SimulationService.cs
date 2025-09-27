@@ -330,7 +330,7 @@ namespace NetworkSimulator.Desktop.Services
                         // Converte la latenza calcolata (in secondi) in millisecondi prima di sommarla
                         stats.TotalLatencySum += (packet.ArrivalTimeAtCurrentNode - packet.CreationTime) * 1000.0;
                         stats.TotalDataDelivered += packet.Size;
-                        stats.FinalPath = packet.FullPath ?? new List<string>();
+                        stats.FinalPath = BuildDetailedPathFromNodeIds(packet.FullPath ?? new List<string>());
                     }
                     packetsToRemove.Add(packet); // Aggiungi alla lista di rimozione
                 }
@@ -364,9 +364,10 @@ namespace NetworkSimulator.Desktop.Services
                 else
                 {
                     var pathResult = CalculateDijkstraPath(_networkGraph, packet.CurrentLocationId, packet.DestinationId, _activeMetric);
-                    if (pathResult.Path != null && pathResult.Path.Count > 1)
+                    if (pathResult.Path != null && pathResult.Path.Any())
                     {
-                        nextHop = pathResult.Path[1];
+                        // Il nextHop è il nodo finale del primo segmento del percorso
+                        nextHop = pathResult.Path[0].EndNodeId;
                     }
                 }
 
@@ -490,9 +491,12 @@ namespace NetworkSimulator.Desktop.Services
 
             if (path.FirstOrDefault() != startNodeId) return new PathResult { Error = "Nessun percorso trovato." };
 
+            // Costruisce il percorso dettagliato prima di restituirlo
+            var detailedPath = BuildDetailedPathFromNodeIds(path);
+
             return new PathResult
             {
-                Path = path,
+                Path = detailedPath, // Ora 'Path' è una List<PathSegment>
                 TotalCost = distances[endNodeId]
             };
         }
@@ -520,6 +524,36 @@ namespace NetworkSimulator.Desktop.Services
                     // Vogliamo minimizzare la latenza, quindi usiamo il suo valore diretto.
                     return link.Latency;
             }
+        }
+
+        private List<PathSegment> BuildDetailedPathFromNodeIds(List<string> nodeIds)
+        {
+            var detailedPath = new List<PathSegment>();
+            if (nodeIds == null || nodeIds.Count < 2 || _networkGraph == null)
+            {
+                return detailedPath;
+            }
+
+            for (int i = 0; i < nodeIds.Count - 1; i++)
+            {
+                var startNodeId = nodeIds[i];
+                var endNodeId = nodeIds[i + 1];
+                var link = _networkGraph.Links.FirstOrDefault(l =>
+                    (l.From == startNodeId && l.To == endNodeId) ||
+                    (l.To == startNodeId && l.From == endNodeId));
+
+                if (link != null)
+                {
+                    detailedPath.Add(new PathSegment
+                    {
+                        StartNodeId = startNodeId,
+                        LinkId = link.Id,
+                        LinkTechnology = link.Technology.ToString(),
+                        EndNodeId = endNodeId
+                    });
+                }
+            }
+            return detailedPath;
         }
 
         /// <summary>

@@ -13,7 +13,7 @@
         public double TotalDataDelivered { get; set; }
 
         // Risultato finale
-        public List<string> FinalPath { get; set; } = new List<string>();
+        public List<PathSegment> FinalPath { get; set; } = new List<PathSegment>();
 
         // Proprietà calcolate per comodità di visualizzazione
         public double AverageLatency => (PacketsDelivered > 0) ? TotalLatencySum / PacketsDelivered : 0;
