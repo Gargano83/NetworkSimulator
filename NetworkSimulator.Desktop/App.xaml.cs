@@ -15,6 +15,8 @@ namespace NetworkSimulator.Desktop
         {
             var window = base.CreateWindow(activationState);
 
+            window.Title = "Simulatore di Rete Dinamica";
+
             // Invece di 'Created', usiamo 'Activated' per essere sicuri che la finestra sia pronta
             window.Activated += OnWindowActivated;
 
