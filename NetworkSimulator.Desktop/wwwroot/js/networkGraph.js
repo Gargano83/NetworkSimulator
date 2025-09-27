@@ -1,7 +1,7 @@
 ﻿// Colori di default e per l'evidenziazione
 const defaultEdgeColor = '#848484';
-const pathColor = '#ADD8E6';            // Azzurro tenue per il percorso pianificato
 const highlightColor = '#00BFFF';       // Blu elettrico per l'impulso attivo
+const traceColor = '#ADD8E6';           // Azzurro tenue per la scia
 
 // Variabili globali per l'applicazione
 let network = null;
@@ -159,21 +159,41 @@ window.networkGraph = {
 
     updatePackets: function (packetData) {
         try {
-            // 1. Resetta tutte le evidenziazioni del tick precedente
-            window.networkGraph.resetHighlights();
-
-            // 2. Per ogni pacchetto, disegna il suo percorso accumulato
+            // 1. Per prima cosa, identifichiamo tutti i link che sono ATTIVI in questo tick.
+            // Usiamo un Set per performance ottimali (ricerca istantanea).
+            const activeEdges = new Set();
             packetData.forEach(p => {
                 if (p.fullPath && p.pathIndex > 0) {
-
-                    // --- LOGICA CHIAVE ---
-                    // Estrae la porzione di percorso già attraversata dal pacchetto
-                    const traversedPath = p.fullPath.slice(0, p.pathIndex + 1);
-
-                    // Evidenzia l'intero percorso attraversato finora
-                    highlightPath(traversedPath, highlightColor, 4);
+                    for (let i = 0; i < p.pathIndex; i++) {
+                        const edge = findEdge(p.fullPath[i], p.fullPath[i + 1]);
+                        if (edge) {
+                            activeEdges.add(edge.id);
+                        }
+                    }
                 }
             });
+
+            // 2. Ora scorriamo tutti i link e aggiorniamo il loro stato in base a 3 condizioni.
+            const edgesToUpdate = [];
+            edges.forEach(edge => {
+                if (activeEdges.has(edge.id)) {
+                    // CASO A: Il link è ATTIVO in questo tick -> colore blu acceso.
+                    edgesToUpdate.push({ id: edge.id, color: { color: highlightColor }, width: 4 });
+                } else {
+                    // CASO B: Il link NON è attivo, ma nel tick precedente lo era -> colore della scia.
+                    if (edge.color && edge.color.color === highlightColor) {
+                        edgesToUpdate.push({ id: edge.id, color: { color: traceColor }, width: 2 });
+                    }
+                    // CASO C: Il link NON è attivo e nel tick precedente era una scia -> torna al default.
+                    else if (edge.color && edge.color.color === traceColor) {
+                        edgesToUpdate.push({ id: edge.id, color: { color: defaultEdgeColor }, width: 1 });
+                    }
+                }
+            });
+
+            if (edgesToUpdate.length > 0) {
+                edges.update(edgesToUpdate);
+            }
 
         } catch (e) {
             console.error("[JS] ERRORE CRITICO in updatePackets:", e);
@@ -186,7 +206,7 @@ window.networkGraph = {
             let updates = allEdges.map(edge => ({
                 id: edge.id,
                 color: { color: defaultEdgeColor },
-                width: null
+                width: 1
             }));
             edges.update(updates);
         }
