@@ -58,3 +58,25 @@ window.chartInterop = {
         }
     }
 };
+
+window.exportCardAsImage = function (elementId, fileName) {
+    const elementToCapture = document.getElementById(elementId);
+
+    if (elementToCapture) {
+        html2canvas(elementToCapture, {
+            useCORS: true, // Permette di renderizzare immagini esterne se ce ne fossero
+            allowTaint: true,
+            scale: 2 // Aumenta la risoluzione dell'immagine per una qualità migliore
+        }).then(canvas => {
+            // Crea un link temporaneo
+            const link = document.createElement('a');
+            link.download = fileName;
+            link.href = canvas.toDataURL('image/png');
+
+            // Simula il click sul link per avviare il download
+            link.click();
+        });
+    } else {
+        console.error('Elemento non trovato:', elementId);
+    }
+}

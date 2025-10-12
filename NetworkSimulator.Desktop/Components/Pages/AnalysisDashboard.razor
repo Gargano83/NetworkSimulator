@@ -9,11 +9,16 @@
 
 <div class="accordion" id="analysisAccordion">
     <!-- Caso di Studio 1 -->
-    <div class="accordion-item">
+    <div class="accordion-item" id="card-normal-conditions">
         <h2 class="accordion-header" id="heading1">
-            <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapse1" aria-expanded="true" aria-controls="collapse1">
-                Caso di Studio 1: Condizioni Normali
-            </button>
+            <div class="d-flex w-100">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapse1" aria-expanded="true" aria-controls="collapse1">
+                    Caso di Studio 1: Condizioni Normali
+                </button>
+                <button class="btn btn-sm btn-outline-secondary ms-auto me-2 my-auto" @onclick='() => ExportCardAsImage("card-normal-conditions", "condizioni-normali.png")' title="Salva come immagine">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
         </h2>
         <div id="collapse1" class="accordion-collapse collapse show" aria-labelledby="heading1">
             <div class="accordion-body">
@@ -80,11 +85,16 @@
         </div>
     </div>
     <!-- Caso di Studio 2 -->
-    <div class="accordion-item">
+    <div class="accordion-item" id="card-link-failure">
         <h2 class="accordion-header" id="heading2">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse2" aria-expanded="false" aria-controls="collapse2">
-                Caso di Studio 2: Guasto di un Link (Link Failure)
-            </button>
+            <div class="d-flex w-100">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse2" aria-expanded="false" aria-controls="collapse2">
+                    Caso di Studio 2: Guasto di un Link (Link Failure)
+                </button>
+                <button class="btn btn-sm btn-outline-secondary ms-auto me-2 my-auto" @onclick='() => ExportCardAsImage("card-link-failure", "guasto-link.png")' title="Salva come immagine">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
         </h2>
         <div id="collapse2" class="accordion-collapse collapse" aria-labelledby="heading2">
             <div class="accordion-body">
@@ -131,11 +141,16 @@
         </div>
     </div>
     <!-- Caso di Studio 3 -->
-    <div class="accordion-item">
+    <div class="accordion-item" id="card-congestion">
         <h2 class="accordion-header" id="heading3">
-            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse3" aria-expanded="false" aria-controls="collapse3">
-                Caso di Studio 3: Congestione
-            </button>
+            <div class="d-flex w-100">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse3" aria-expanded="false" aria-controls="collapse3">
+                    Caso di Studio 3: Congestione
+                </button>
+                <button class="btn btn-sm btn-outline-secondary ms-auto me-2 my-auto" @onclick='() => ExportCardAsImage("card-congestion", "congestione.png")' title="Salva come immagine">
+                    <i class="bi bi-printer"></i>
+                </button>
+            </div>
         </h2>
         <div id="collapse3" class="accordion-collapse collapse" aria-labelledby="heading3">
             <div class="accordion-body">
@@ -302,6 +317,11 @@
         }
 
         return pathString.ToString();
+    }
+
+    private async Task ExportCardAsImage(string elementId, string fileName)
+    {
+        await JSRuntime.InvokeVoidAsync("exportCardAsImage", elementId, fileName);
     }
 
     public void Dispose()

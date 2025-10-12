@@ -78,6 +78,7 @@
     <ItemGroup>
       <Folder Include="Resources\AppIcon\" />
       <Folder Include="Services\" />
+      <Folder Include="wwwroot\lib\html2canvas\" />
     </ItemGroup>
 
     <ItemGroup>
