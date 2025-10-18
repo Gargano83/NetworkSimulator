@@ -291,8 +291,29 @@ namespace NetworkSimulator.Desktop.Services
 
             foreach (var sensorId in activeSensorIds)
             {
-                // Per ogni sensore attivo, calcola il suo percorso ottimale attuale
-                var pathResult = CalculateDijkstraPath(_networkGraph, sensorId, internetNode.Id, _activeMetric);
+                PathResult pathResult;
+
+                if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Se l'IA è attiva, chiedi a lei qual è il percorso migliore
+                    var nodeIds = _routingAgent.GetGreedyPath(_networkGraph, sensorId, internetNode.Id);
+                    var detailedPath = BuildDetailedPathFromNodeIds(nodeIds);
+
+                    // Calcoliamo il costo del percorso scelto dall'IA solo per visualizzarlo
+                    double totalCost = 0;
+                    if (detailedPath.Any())
+                    {
+                        totalCost = detailedPath.Sum(segment =>
+                            GetMetricValue(_networkGraph.Links.First(l => l.Id == segment.LinkId), _activeMetric));
+                    }
+                    pathResult = new PathResult { Path = detailedPath, TotalCost = totalCost };
+                }
+                else
+                {
+                    // Altrimenti, usa Dijkstra come prima
+                    pathResult = CalculateDijkstraPath(_networkGraph, sensorId, internetNode.Id, _activeMetric);
+                }
+
                 if (pathResult.Path != null)
                 {
                     allFlowResults.Add(new FlowResult
@@ -384,28 +405,39 @@ namespace NetworkSimulator.Desktop.Services
                             OnLogEvent?.Invoke(logMessage);
                             Console.WriteLine(logMessage);
 
+                            if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Diamo una forte ricompensa negativa per aver perso un pacchetto.
+                                const double penalty = -100.0;
+                                _routingAgent.UpdateModel(packet.CurrentLocationId, nextHop, packet.DestinationId, penalty);
+                            }
+
                             packetsToRemove.Add(packet); // Segna questo pacchetto per la rimozione
                             continue; // Salta il resto della logica per questo pacchetto
                         }
-                        // Controllo affidabilità e packet loss
 
-                        if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
-                        {
-                            // La ricompensa ora è un mix di latenza e affidabilità
-                            double reward = (100.0 / linkTaken.Latency) * linkTaken.Reliability;
-
-                            // Notifica al modello l'esperienza e la sua ricompensa
-                            _routingAgent.UpdateModel(packet.PreviousLocationId, packet.CurrentLocationId, packet.DestinationId, reward);
-                        }
+                        // Salvo lo stato prima di muovere il pacchetto
+                        var previousNode = packet.CurrentLocationId;
 
                         double delayInSeconds = linkTaken.Latency / 1000.0;
                         // Aggiorna la posizione e il nuovo tempo di arrivo
                         packet.PreviousLocationId = packet.CurrentLocationId;
                         packet.CurrentLocationId = nextHop;
                         packet.ArrivalTimeAtCurrentNode = _simulationTime + delayInSeconds;
-                        // CORREZIONE HIGHLIGHTING: Aggiorna il percorso e l'indice
+                        // Aggiorna il percorso e l'indice
                         packet.FullPath?.Add(nextHop);
                         packet.PathIndex = (packet.FullPath?.Count ?? 1) - 1;
+
+                        // Applica una ricompensa positiva all'IA per la scelta corretta
+                        if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
+                        {
+                            const double epsilon = 1e-6;
+                            // Un fattore di penalità alto per il rischio
+                            const double reliabilityPenaltyFactor = 50.0;
+                            // La decisione (Stato, Azione) che ha portato al successo è (stato precedente, stato attuale)
+                            double reward = (100.0 / (linkTaken.Latency + epsilon)) - (reliabilityPenaltyFactor * (1.0 - linkTaken.Reliability));
+                            _routingAgent.UpdateModel(previousNode, packet.CurrentLocationId, packet.DestinationId, reward);
+                        }
                     }
                 }
             }

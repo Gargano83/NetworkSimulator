@@ -113,14 +113,26 @@ namespace NetworkSimulator.Desktop.Services
 
                 var dataView = _mlContext.Data.LoadFromEnumerable(trainingBatch);
 
-                var estimator = _mlContext.Recommendation().Trainers.MatrixFactorization(new MatrixFactorizationTrainer.Options
+                // 1. Converto la colonna 'State' (che è un UInt32) nel formato 'Key' richiesto dal trainer.
+                IEstimator<ITransformer> pipeline = _mlContext.Transforms.Conversion.MapValueToKey(
+                    outputColumnName: "State",
+                    inputColumnName: nameof(StateActionInput.State));
+
+                // 2. Lo stesso per la colonna 'Action' e aggiungila alla pipeline.
+                pipeline = pipeline.Append(_mlContext.Transforms.Conversion.MapValueToKey(
+                     outputColumnName: "Action",
+                     inputColumnName: nameof(StateActionInput.Action)));
+
+                // 3. Aggiungo alla pipeline il nostro trainer, che ora riceverà i dati nel formato corretto.
+                var estimator = pipeline.Append(_mlContext.Recommendation().Trainers.MatrixFactorization(
+                new MatrixFactorizationTrainer.Options
                 {
-                    MatrixColumnIndexColumnName = nameof(StateActionInput.State),
-                    MatrixRowIndexColumnName = nameof(StateActionInput.Action),
+                    MatrixColumnIndexColumnName = "State",
+                    MatrixRowIndexColumnName = "Action",
                     LabelColumnName = nameof(StateActionInput.Score),
                     NumberOfIterations = 50,
                     ApproximationRank = 10
-                });
+                }));
 
                 // L'addestramento (la parte lenta) avviene qui, in background
                 var newModel = estimator.Fit(dataView);
@@ -134,6 +146,64 @@ namespace NetworkSimulator.Desktop.Services
                 }
                 Console.WriteLine("[ML.NET Agent] Modello aggiornato.");
             }
+        }
+
+        public List<string> GetGreedyPath(GraphData graph, string startNodeId, string destinationId)
+        {
+            var path = new List<string> { startNodeId };
+            var currentNodeId = startNodeId;
+
+            // Blocca il motore di predizione per garantire la coerenza durante il calcolo del percorso
+            PredictionEngine<StateActionInput, QValueOutput> localPredictionEngine;
+            lock (_modelLock)
+            {
+                localPredictionEngine = _predictionEngine;
+            }
+
+            // Se il modello non è ancora stato addestrato, restituisci un percorso vuoto
+            if (localPredictionEngine == null)
+            {
+                return new List<string>();
+            }
+
+            // Esegui un massimo di 50 salti per sicurezza e per evitare cicli infiniti
+            for (int i = 0; i < 50 && currentNodeId != destinationId; i++)
+            {
+                var possibleMoves = graph.Links.Where(l => l.From == currentNodeId).ToList();
+                if (!possibleMoves.Any())
+                {
+                    break; // Il nodo è un punto cieco
+                }
+
+                string bestMove = "";
+                float maxQValue = float.MinValue;
+
+                // Chiedi al modello ML.NET di predire il valore di ogni mossa possibile
+                foreach (var move in possibleMoves)
+                {
+                    var prediction = localPredictionEngine.Predict(new StateActionInput
+                    {
+                        State = GetStateId(currentNodeId, destinationId),
+                        Action = GetActionId(move.To)
+                    });
+
+                    if (prediction.Score > maxQValue)
+                    {
+                        maxQValue = prediction.Score;
+                        bestMove = move.To;
+                    }
+                }
+
+                if (string.IsNullOrEmpty(bestMove) || path.Contains(bestMove))
+                {
+                    break; // L'agente è bloccato o sta entrando in un ciclo
+                }
+
+                path.Add(bestMove);
+                currentNodeId = bestMove;
+            }
+
+            return path;
         }
 
         // Metodi helper per mappare gli ID (invariati)

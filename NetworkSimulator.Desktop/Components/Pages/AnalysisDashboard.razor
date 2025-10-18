@@ -176,7 +176,7 @@
                                     {
                                         <tr>
                                             <td class="fw-bold text-start ps-2">@algEntry.Key - @GetNodeLabel(flowEntry.Key)</td>
-                                            @foreach (var dataPoint in flowEntry.Value)
+                                            @foreach (var dataPoint in flowEntry.Value.ToList())
                                             {
                                                 <td>@dataPoint.AverageLatency.ToString("F0")</td>
                                             }
