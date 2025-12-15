@@ -194,6 +194,81 @@ namespace NetworkSimulator.Desktop.Services
         }
 
         /// <summary>
+        /// Genera programmaticamente una topologia Hub-and-Spoke per i test di scalabilità.
+        /// </summary>
+        /// <param name="sensorCount">Numero di sensori da collegare al gateway.</param>
+        /// <param name="dataRate">Il data rate (KB/s) da assegnare a ogni sensore.</param>
+        public GraphData GenerateScalabilityTopology(int sensorCount, double dataRate)
+        {
+            var nodes = new List<Node>();
+            var links = new List<Link>();
+
+            // 1. Creazione dell'infrastruttura fissa (Backbone)
+            // Creiamo un Gateway centrale, un Router e il nodo Internet
+            var gateway = new Node { Id = "GW", Label = "LoRa Gateway", Type = NodeType.Gateway };
+            var router = new Node { Id = "R", Label = "Core Router", Type = NodeType.Router };
+            var internet = new Node { Id = "INT", Label = "Internet", Type = NodeType.Internet };
+
+            nodes.Add(gateway);
+            nodes.Add(router);
+            nodes.Add(internet);
+
+            // 2. Collegamenti Backbone (Fibra e Core)
+            // Impostiamo direttamente le metriche per avere il controllo totale senza dipendere dalla UI
+            links.Add(new Link
+            {
+                Id = "L_GW_R",
+                From = "GW",
+                To = "R",
+                Technology = LinkTechnology.Fiber,
+                Bandwidth = 1000,
+                Latency = 2,
+                Reliability = 0.999
+            });
+
+            links.Add(new Link
+            {
+                Id = "L_R_INT",
+                From = "R",
+                To = "INT",
+                Technology = LinkTechnology.CoreNwk,
+                Bandwidth = 10000,
+                Latency = 5,
+                Reliability = 0.9999
+            });
+
+            // 3. Generazione dinamica dei Sensori (Spokes)
+            for (int i = 1; i <= sensorCount; i++)
+            {
+                string sensorId = $"S{i}";
+
+                // Crea il nodo Sensore
+                nodes.Add(new Node
+                {
+                    Id = sensorId,
+                    Label = $"Sensor {i}",
+                    Type = NodeType.Sensor,
+                    DataRate = dataRate,
+                    PacketSize = 0.1
+                });
+
+                // Crea il link LoRa verso il Gateway
+                links.Add(new Link
+                {
+                    Id = $"L{i}",
+                    From = sensorId,
+                    To = "GW",
+                    Technology = LinkTechnology.LoRa,
+                    Bandwidth = 0.05, 
+                    Latency = 100,    
+                    Reliability = 0.95
+                });
+            }
+
+            return new GraphData { Nodes = nodes, Links = links };
+        }
+
+        /// <summary>
         /// Simula le variazioni delle condizioni di rete (es. congestione, interferenze).
         /// </summary>
         private void UpdateNetworkConditions()
@@ -365,15 +440,38 @@ namespace NetworkSimulator.Desktop.Services
                 packetsToRemove.AddRange(expiredPackets);
             }
 
-            // 3. Muove i pacchetti ancora in transito
-            foreach (var packet in _packets.Except(packetsToRemove))
+            // Prima di muovere qualsiasi pacchetto, contiamo quanti ce ne sono su ogni tratta.
+            // Questo serve a simulare le code: se un link è affollato, va più lento.
+            var linkLoadMap = new Dictionary<string, int>();
+
+            // Prendiamo i pacchetti che sono attualmente in viaggio
+            var packetsInTransit = _packets.Except(packetsToRemove).Where(p => _simulationTime >= p.ArrivalTimeAtCurrentNode).ToList();
+
+            foreach (var p in packetsInTransit)
             {
-                // Se il pacchetto non è ancora arrivato (è in transito su un link), non fare nulla per questo tick
-                if (_simulationTime < packet.ArrivalTimeAtCurrentNode)
+                // Prevediamo dove andrà il pacchetto per contare il carico sul link
+                string tempNextHop = p.CurrentLocationId;
+                if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
                 {
-                    continue;
+                    tempNextHop = _routingAgent.ChooseNextHop(_networkGraph, p.CurrentLocationId, p.DestinationId);
+                }
+                else
+                {
+                    var pathRes = CalculateDijkstraPath(_networkGraph, p.CurrentLocationId, p.DestinationId, _activeMetric);
+                    if (pathRes.Path != null && pathRes.Path.Any()) tempNextHop = pathRes.Path[0].EndNodeId;
                 }
 
+                if (tempNextHop != p.CurrentLocationId)
+                {
+                    string key = $"{p.CurrentLocationId}-{tempNextHop}";
+                    if (!linkLoadMap.ContainsKey(key)) linkLoadMap[key] = 0;
+                    linkLoadMap[key]++; // Aggiungiamo 1 al contatore di questo link
+                }
+            }
+
+            // 3. Muove i pacchetti ancora in transito
+            foreach (var packet in packetsInTransit)
+            {
                 packet.Ttl--;
                 string nextHop = packet.CurrentLocationId;
 
@@ -398,8 +496,24 @@ namespace NetworkSimulator.Desktop.Services
                     var linkTaken = _networkGraph.Links.FirstOrDefault(l => (l.From == packet.CurrentLocationId && l.To == nextHop) || (l.To == packet.CurrentLocationId && l.From == nextHop));
                     if (linkTaken != null)
                     {
+                        string linkKey = $"{packet.CurrentLocationId}-{nextHop}";
+                        int trafficOnLink = linkLoadMap.ContainsKey(linkKey) ? linkLoadMap[linkKey] : 0;
+
+                        // Cerchiamo il nodo sorgente per sapere il suo DataRate
+                        var sourceNode = _networkGraph.Nodes.FirstOrDefault(n => n.Id == packet.SourceId);
+                        double rateFactor = sourceNode != null && sourceNode.DataRate.HasValue ? (sourceNode.DataRate.Value / 10.0) : 1.0;
+                        // Se Rate=10 -> fattore 1.0. Se Rate=25 -> fattore 2.5.
+                        // Il traffico viene moltiplicato per il "peso" del Data Rate.
+                        double latencyPenalty = Math.Max(0, (trafficOnLink - 1) * 50.0 * rateFactor);
+
+                        // Penalità Affidabilità: -0.1% per ogni pacchetto extra (collisioni)
+                        double reliabilityPenalty = Math.Max(0, (trafficOnLink - 1) * 0.001);
+
+                        double effectiveLatency = linkTaken.Latency + latencyPenalty;
+                        double effectiveReliability = Math.Max(0.1, linkTaken.Reliability - reliabilityPenalty);
+
                         // Controllo affidabilità e packet loss
-                        if (_random.NextDouble() > linkTaken.Reliability)
+                        if (_random.NextDouble() > effectiveReliability)
                         {
                             var logMessage = $"[{_simulationTime}s] PACKET LOSS: Pacchetto da {packet.SourceId} perso sul link {linkTaken.Id} (Affidabilità: {linkTaken.Reliability * 100}%).";
                             OnLogEvent?.Invoke(logMessage);
@@ -408,7 +522,7 @@ namespace NetworkSimulator.Desktop.Services
                             if (_activeRoutingAlgorithm.Equals("AI", StringComparison.OrdinalIgnoreCase))
                             {
                                 // Diamo una forte ricompensa negativa per aver perso un pacchetto.
-                                const double penalty = -100.0;
+                                const double penalty = -50.0;
                                 _routingAgent.UpdateModel(packet.CurrentLocationId, nextHop, packet.DestinationId, penalty);
                             }
 
@@ -419,7 +533,7 @@ namespace NetworkSimulator.Desktop.Services
                         // Salvo lo stato prima di muovere il pacchetto
                         var previousNode = packet.CurrentLocationId;
 
-                        double delayInSeconds = linkTaken.Latency / 1000.0;
+                        double delayInSeconds = effectiveLatency / 1000.0;
                         // Aggiorna la posizione e il nuovo tempo di arrivo
                         packet.PreviousLocationId = packet.CurrentLocationId;
                         packet.CurrentLocationId = nextHop;
@@ -435,7 +549,7 @@ namespace NetworkSimulator.Desktop.Services
                             // Un fattore di penalità alto per il rischio
                             const double reliabilityPenaltyFactor = 50.0;
                             // La decisione (Stato, Azione) che ha portato al successo è (stato precedente, stato attuale)
-                            double reward = (100.0 / (linkTaken.Latency + epsilon)) - (reliabilityPenaltyFactor * (1.0 - linkTaken.Reliability));
+                            double reward = (100.0 / (effectiveLatency + epsilon)) - (reliabilityPenaltyFactor * (1.0 - effectiveReliability));
                             _routingAgent.UpdateModel(previousNode, packet.CurrentLocationId, packet.DestinationId, reward);
                         }
                     }

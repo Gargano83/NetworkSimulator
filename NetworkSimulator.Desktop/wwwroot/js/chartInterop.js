@@ -56,6 +56,105 @@ window.chartInterop = {
                 }
             });
         }
+    },
+    updateScalabilityChart: function (elementId, datasets) {
+        const ctx = document.getElementById(elementId);
+        if (!ctx) return;
+
+        // Se il grafico esiste già, aggiorniamo solo i dati
+        if (window[elementId] instanceof Chart) {
+            window[elementId].data.datasets = datasets;
+            window[elementId].update();
+            return;
+        }
+
+        // Altrimenti lo creiamo da zero
+        window[elementId] = new Chart(ctx, {
+            type: 'line', // Grafico a linee
+            data: {
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Scalabilità: Latenza vs Numero Sensori'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + ' ms';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'linear', // Fondamentale: l'asse X è numerico, non categorie
+                        title: {
+                            display: true,
+                            text: 'Numero di Sensori'
+                        },
+                        ticks: {
+                            stepSize: 1 // Mostra numeri interi
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Latenza Media (ms)'
+                        },
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    },
+    updateScalabilityDeliveryChart: function (elementId, datasets) {
+        const ctx = document.getElementById(elementId);
+        if (!ctx) return;
+
+        if (window[elementId] instanceof Chart) {
+            window[elementId].data.datasets = datasets;
+            window[elementId].update();
+            return;
+        }
+
+        window[elementId] = new Chart(ctx, {
+            type: 'line',
+            data: { datasets: datasets },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    title: { display: true, text: 'Scalabilità: Tasso di Consegna vs Numero Sensori' },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                return context.dataset.label + ': ' + context.parsed.y.toFixed(2) + '%';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        title: { display: true, text: 'Numero di Sensori' },
+                        ticks: { stepSize: 1 }
+                    },
+                    y: {
+                        title: { display: true, text: 'Tasso di Consegna (%)' },
+                        beginAtZero: true,
+                        max: 105 // Un po' di margine sopra il 100%
+                    }
+                }
+            }
+        });
     }
 };
 

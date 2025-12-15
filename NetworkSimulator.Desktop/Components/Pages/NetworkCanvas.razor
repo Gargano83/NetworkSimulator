@@ -170,6 +170,48 @@
                                     </div>
                                 }
 
+                                <hr class="my-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="scalabilitySwitch"
+                                           @bind="scalabilityTestEnabled"
+                                           disabled="@isSimulationRunning">
+                                    <label class="form-check-label" for="scalabilitySwitch"><strong>Abilita Test di Scalabilità</strong></label>
+                                </div>
+
+                                @if (scalabilityTestEnabled)
+                                {
+                                    <div class="card bg-light border-0 mt-2">
+                                        <div class="card-body p-2 small">
+                                            <div class="row g-2 align-items-center">
+                                                <div class="col-md-3">
+                                                    <label class="form-label mb-0">Sensori Start:</label>
+                                                    <input type="number" class="form-control form-control-sm" @bind="scaleStartSensors" disabled="@isSimulationRunning" />
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label mb-0">Sensori End:</label>
+                                                    <input type="number" class="form-control form-control-sm" @bind="scaleEndSensors" disabled="@isSimulationRunning" />
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label mb-0">Step (+N):</label>
+                                                    <input type="number" class="form-control form-control-sm" @bind="scaleStepSensors" disabled="@isSimulationRunning" />
+                                                </div>
+                                                <div class="col-md-3">
+                                                    <label class="form-label mb-0">Durata (s):</label>
+                                                    <input type="number" class="form-control form-control-sm" @bind="scaleDurationPerStep" disabled="@isSimulationRunning" />
+                                                </div>
+                                                <div class="col-md-12 mt-2">
+                                                    <label class="form-label mb-0">Data Rate (KB/s) per Curva:</label>
+                                                    <input type="number" class="form-control form-control-sm" @bind="scaleDataRate" disabled="@isSimulationRunning" />
+                                                </div>
+                                            </div>
+                                            <div class="mt-2 text-muted fst-italic">
+                                                <i class="bi bi-info-circle me-1"></i>
+                                                Verranno eseguite <strong>@((scaleEndSensors - scaleStartSensors) / scaleStepSensors + 1)</strong> simulazioni in sequenza.
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+
                                 @if (!string.IsNullOrEmpty(simulationStatusMessage))
                                 {
                                     <div class="text-muted small mt-3">@simulationStatusMessage</div>
@@ -286,6 +328,15 @@
     private string failureType = "link"; // Valore di default
     private string? failureTargetId;
     private int failureTime = 25; // Default: 25 secondi
+    // --- FINE NUOVE VARIABILI ---
+
+    // --- NUOVE VARIABILI PER TEST DI SCALABILITÀ ---
+    private bool scalabilityTestEnabled = false;
+    private int scaleStartSensors = 5;
+    private int scaleEndSensors = 50;
+    private int scaleStepSensors = 5;
+    private double scaleDataRate = 10.0; // KB/s
+    private int scaleDurationPerStep = 10; // Secondi per ogni step
     // --- FINE NUOVE VARIABILI ---
 
     protected override void OnInitialized()
@@ -443,6 +494,13 @@
     /// </summary>
     private async Task StartSimulation()
     {
+        // Se è attivo il test di scalabilità, eseguiamo la logica batch e usciamo.
+        if (scalabilityTestEnabled)
+        {
+            await RunScalabilityTestBatch();
+            return;
+        }
+
         latestFlowResults.Clear();
         simulationStats = null;     // Pulisce la dashboard precedente
         eventLogMessages.Clear();   // Pulisce il log precedente
@@ -595,6 +653,66 @@
         showAddLinkStatus = true;
         StateHasChanged();
         await JSRuntime.InvokeVoidAsync("networkGraph.enterAddLinkMode");
+    }
+
+    private async Task RunScalabilityTestBatch()
+    {
+        isBusy = true;
+        isSimulationRunning = true;
+
+        // 1. Prepara l'ambiente
+        AnalysisState.SetScalabilityTestStatus(true);
+        simulationStatusMessage = "Avvio Test di Scalabilità...";
+        StateHasChanged();
+
+        // 2. Loop principale del test
+        for (int sensorCount = scaleStartSensors; sensorCount <= scaleEndSensors; sensorCount += scaleStepSensors)
+        {
+            simulationStatusMessage = $"Esecuzione test: {sensorCount} sensori (Rate: {scaleDataRate} KB/s)...";
+            StateHasChanged();
+
+            // A. Genera la topologia programmatica
+            var graphData = SimulationService.GenerateScalabilityTopology(sensorCount, scaleDataRate);
+
+            // B. Aggiorna la visualizzazione (opzionale, ma bello da vedere)
+            // Nota: per velocizzare, potremmo saltare il disegno JS, ma lasciamolo per feedback visivo
+            nodes = graphData.Nodes;
+            links = graphData.Links;
+            var nodesForJs = nodes.Select(n => new { id = n.Id, label = n.Label, type = n.Type.ToString() });
+            var linksForJs = links.Select(l => new { id = l.Id, from = l.From, to = l.To, label = $"L:{l.Latency} B:{l.Bandwidth}", technology = l.Technology.ToString() });
+            await JSRuntime.InvokeVoidAsync("networkGraph.drawTopology", nodesForJs, linksForJs);
+
+            // C. Avvia la simulazione (senza guasti o congestioni)
+            SimulationService.StartSimulation(graphData, selectedRoutingAlgorithm, selectedMetric, null, 0, 0, null, null, 0);
+
+            // D. Attendi il tempo prefissato
+            await Task.Delay(scaleDurationPerStep * 1000);
+
+            // E. Raccogli i risultati
+            var finalResults = SimulationService.GetFinalResults();
+            SimulationService.StopSimulation();
+
+            // F. Salva il punto dati nel servizio di analisi
+            AnalysisState.AddScalabilityResult(new ScalabilityTestResult
+            {
+                Algorithm = selectedRoutingAlgorithm,
+                SensorCount = sensorCount,
+                DataRate = scaleDataRate,
+                AverageLatency = finalResults.AggregateStats.AverageLatency,
+                DeliveryRate = (finalResults.AggregateStats.PacketsGenerated > 0) ?
+                               ((double)finalResults.AggregateStats.PacketsDelivered / finalResults.AggregateStats.PacketsGenerated * 100) : 0
+            });
+
+            // Breve pausa per pulizia
+            await Task.Delay(500);
+        }
+
+        // 3. Fine del test
+        isSimulationRunning = false;
+        isBusy = false;
+        simulationStatusMessage = "Test di Scalabilità completato. Vedi i risultati nel tab Analisi.";
+        // Non disabilitiamo AnalysisState.IsScalabilityTestRunning qui, così il grafico rimane visibile
+        StateHasChanged();
     }
 
     [JSInvokable]

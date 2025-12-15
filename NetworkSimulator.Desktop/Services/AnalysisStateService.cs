@@ -36,6 +36,15 @@ namespace NetworkSimulator.Desktop.Services
         public bool IsCongestionTestRunning { get; private set; } = false;
         public bool IsLinkFailureTestRunning { get; private set; } = false;
 
+        // Memorizza tutti i risultati raccolti (es. 5 sensori->10ms, 10 sensori->15ms...)
+        public List<ScalabilityTestResult> ScalabilityResults { get; private set; } = new();
+
+        // Flag per sapere se stiamo eseguendo questo test specifico
+        public bool IsScalabilityTestRunning { get; private set; } = false;
+
+        // Evento specifico per notificare che c'è un nuovo punto nel grafico di scalabilità
+        public event Action? OnScalabilityResultAdded;
+
         public event Action? OnChange;
 
         public void AddNormalConditionFlowResults(string algorithmName, List<FlowStats> stats)
@@ -116,6 +125,21 @@ namespace NetworkSimulator.Desktop.Services
             IsLinkFailureTestRunning = isRunning;
         }
 
+        public void SetScalabilityTestStatus(bool isRunning)
+        {
+            IsScalabilityTestRunning = isRunning;
+            NotifyStateChanged();
+        }
+
+        public void AddScalabilityResult(ScalabilityTestResult result)
+        {
+            lock (_lock)
+            {
+                ScalabilityResults.Add(result);
+            }
+            OnScalabilityResultAdded?.Invoke();
+        }
+
         public void Clear()
         {
             lock (_lock)
@@ -125,6 +149,8 @@ namespace NetworkSimulator.Desktop.Services
                 CongestionTestResults.Clear();
                 IsLinkFailureTestRunning = false;
                 IsCongestionTestRunning = false;
+                ScalabilityResults.Clear();
+                IsScalabilityTestRunning = false;
             }
             
             NotifyStateChanged();
