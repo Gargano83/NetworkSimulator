@@ -1,0 +1,29 @@
+name: Manual Sync from Azure DevOps
+
+on:
+  workflow_dispatch: # Solo manuale
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitHub Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Usiamo il token speciale per gestire la sovrascrittura dei workflow
+          token: ${{ secrets.GH_SYNC_TOKEN }}
+
+      - name: Sync Mirror from Azure
+        env:
+          AZURE_TOKEN: ${{ secrets.AZURE_PAT }}
+        run: |
+          # URL per NetworkSimulator
+          AZURE_URL="https://x-token-auth:${AZURE_TOKEN}@iannyspace.visualstudio.com/NetworkSimulator/_git/NetworkSimulator"
+          
+          git remote add azure "$AZURE_URL"
+          git fetch azure --prune
+          
+          # Sincronizzazione forzata: allinea GitHub ad Azure
+          git push origin "refs/remotes/azure/*:refs/heads/*" --force
+          git push origin --tags --force
